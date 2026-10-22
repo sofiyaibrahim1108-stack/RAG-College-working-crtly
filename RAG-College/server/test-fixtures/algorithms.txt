@@ -1,0 +1,5 @@
+Algorithms and Data Structures Lecture Notes
+Topic: Sorting and Searching
+QuickSort has O(N log N) average complexity.
+Binary Search requires sorted arrays and runs in O(log N).
+Hash Tables offer O(1) average lookup time.
