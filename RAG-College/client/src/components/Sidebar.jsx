@@ -18,7 +18,8 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   LogOut,
-  LogIn
+  LogIn,
+  Users,
 } from 'lucide-react';
 
 function formatRelativeTime(dateString) {
@@ -373,6 +374,17 @@ export default function Sidebar({
           </button>
 
           {/* 4. Departments */}
+          {/* <button
+            type="button"
+            className={`sidebar-nav-item ${activeView === 'departments' ? 'active' : ''}`}
+            title="Departments"
+            onClick={() => handleNavClick('departments')}
+          >
+            <Building2 size={17} strokeWidth={1.9} />
+            {!isCollapsed && <span>Departments</span>}
+          </button> */}
+
+          {/* 4. Departments */}
           <button
             type="button"
             className={`sidebar-nav-item ${activeView === 'departments' ? 'active' : ''}`}
@@ -383,7 +395,20 @@ export default function Sidebar({
             {!isCollapsed && <span>Departments</span>}
           </button>
 
-          {/* 5. Settings */}
+          {/* 5. Users & Staff (Admin Only) */}
+          {currentUser?.role === 'admin' && (
+            <button
+              type="button"
+              className={`sidebar-nav-item ${activeView === 'users' ? 'active' : ''}`}
+              title="Users & Staff Management"
+              onClick={() => handleNavClick('users')}
+            >
+              <Users size={17} strokeWidth={1.9} />
+              {!isCollapsed && <span>Users & Staff</span>}
+            </button>
+          )}
+
+          {/* 6. Settings */}
           <button
             type="button"
             className="sidebar-nav-item"
@@ -396,6 +421,20 @@ export default function Sidebar({
             <Settings size={17} strokeWidth={1.9} />
             {!isCollapsed && <span>Settings</span>}
           </button>
+
+          {/* 5. Settings */}
+          {/* <button
+            type="button"
+            className="sidebar-nav-item"
+            title="Settings"
+            onClick={() => {
+              if (onOpenSettings) onOpenSettings();
+              if (onCloseMobile) onCloseMobile();
+            }}
+          >
+            <Settings size={17} strokeWidth={1.9} />
+            {!isCollapsed && <span>Settings</span>}
+          </button> */}
         </div>
 
         {/* Divider & Scrollable History Area (Expanded only) */}

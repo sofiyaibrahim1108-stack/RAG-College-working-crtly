@@ -13,62 +13,56 @@ const generateToken = (user) => {
 // POST /api/auth/register
 exports.register = async (req, res, next) => {
   try {
-    const { name, email, password, role, departmentIds } = req.body;
+    const { email, password, name } = req.body;
 
-    if (!name || !email || !password) {
-      return res.status(400).json({ success: false, message: 'Please provide name, email, and password.' });
+    if (!email || !password) {
+      return res.status(400).json({ success: false, message: 'Email and password are required' });
     }
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      return res.status(400).json({ success: false, message: 'Please provide a valid email address.' });
+    const normalizedEmail = email.toLowerCase().trim();
+
+    // 1. Check if user is in Admin's Allowlist
+    const user = await User.findOne({ email: normalizedEmail });
+
+    if (!user) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access Denied: Your email is not registered by the College Admin. Please contact Admin.'
+      });
     }
 
-    if (password.length < 6) {
-      return res.status(400).json({ success: false, message: 'Password must be at least 6 characters long.' });
+    // 2. Check if account is suspended
+    if (user.status === 'suspended') {
+      return res.status(403).json({
+        success: false,
+        message: 'Account is suspended. Please contact the administrator.'
+      });
     }
 
-    const existingUser = await User.findOne({ email: email.toLowerCase() });
-    if (existingUser) {
-      return res.status(409).json({ success: false, message: 'User already exists with this email.' });
+    // 3. Check if password already set
+    if (user.passwordHash) {
+      return res.status(409).json({
+        success: false,
+        message: 'Account is already activated. Please sign in with your password.'
+      });
     }
 
+    // 4. Set User's chosen private password
     const salt = await bcrypt.genSalt(10);
-    const passwordHash = await bcrypt.hash(password, salt);
+    user.passwordHash = await bcrypt.hash(password, salt);
+    if (name && !user.name) user.name = name.trim();
+    user.status = 'active';
+    await user.save();
 
-    // Public registration enforces user role to prevent privilege escalation
-    const assignedRole = 'user';
-
-    const newUser = await User.create({
-      name,
-      email: email.toLowerCase(),
-      passwordHash,
-      role: assignedRole,
-      departmentIds: departmentIds || []
-    });
-
-    const token = generateToken(newUser);
-
-    return res.status(201).json({
+    return res.status(200).json({
       success: true,
-      message: 'User registered successfully.',
-      token,
-      user: {
-        id: newUser._id,
-        name: newUser.name,
-        email: newUser.email,
-        role: newUser.role,
-        departmentIds: newUser.departmentIds
-      }
+      message: 'Account activated successfully! You can now sign in with your password.'
     });
   } catch (err) {
-    if (typeof next === 'function') {
-      next(err);
-    } else {
-      res.status(500).json({ success: false, message: err.message });
-    }
+    if (typeof next === 'function') next(err);
+    else res.status(500).json({ success: false, message: err.message });
   }
-};
+};  
 
 // POST /api/auth/login
 exports.login = async (req, res, next) => {
@@ -79,13 +73,21 @@ exports.login = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Please provide email and password.' });
     }
 
-    const user = await User.findOne({ email: email.toLowerCase() }).select('+passwordHash');
+    const user = await User.findOne({ email: email.toLowerCase().trim() }).select('+passwordHash');
     if (!user) {
       return res.status(401).json({ success: false, message: 'Invalid email or password.' });
     }
 
     if (user.status === 'suspended') {
       return res.status(403).json({ success: false, message: 'Account is suspended.' });
+    }
+
+    // User allowlist-la irundhum password innum set pannalanna:
+    if (!user.passwordHash) {
+      return res.status(400).json({
+        success: false,
+        message: 'Account not activated yet. Please click Register/Sign Up to set your password.'
+      });
     }
 
     const isMatch = await bcrypt.compare(password, user.passwordHash);
@@ -104,7 +106,7 @@ exports.login = async (req, res, next) => {
         name: user.name,
         email: user.email,
         role: user.role,
-        departmentIds: user.departmentIds
+        departmentIds: user.departmentIds || (user.departmentId ? [user.departmentId] : [])
       }
     });
   } catch (err) {

@@ -217,10 +217,7 @@ export async function sendChatMessage({
   return data;
 }
 
-// Streaming Chat API (Server-Sent Events over fetch).
-// onToken(text) is called for every piece of the answer as it is generated,
-// onReset() is called when the server restarts the answer (for example a retry),
-// and the returned promise resolves with the same payload sendChatMessage returns.
+// Streaming Chat API (Server-Sent Events over fetch)
 export async function sendChatMessageStream({
   message,
   sessionId,
@@ -270,7 +267,6 @@ export async function sendChatMessageStream({
   let buffer = '';
   let finalPayload = null;
 
-  // One SSE frame looks like:  event: token\ndata: {"text":"..."}
   const handleFrame = (frame) => {
     let eventName = 'message';
     const dataLines = [];
@@ -416,6 +412,56 @@ export async function importDriveFile({ fileId, departmentIds, forceReimport = f
     err.duplicate = data.duplicate;
     err.data = data.data;
     throw err;
+  }
+  return data;
+}
+
+// User Management APIs (Admin Only)
+export async function fetchUsers() {
+  const res = await fetch(`${API_BASE}/users`, {
+    headers: getAuthHeaders()
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || 'Failed to fetch users');
+  }
+  return res.json();
+}
+
+export async function createUserRecord(userData) {
+  const res = await fetch(`${API_BASE}/users`, {
+    method: 'POST',
+    headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(userData)
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.message || 'Failed to create user');
+  }
+  return data;
+}
+
+export async function toggleUserStatusRecord(id, status) {
+  const res = await fetch(`${API_BASE}/users/${id}/status`, {
+    method: 'PATCH',
+    headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ status })
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.message || 'Failed to update user status');
+  }
+  return data;
+}
+
+export async function deleteUserRecord(id) {
+  const res = await fetch(`${API_BASE}/users/${id}`, {
+    method: 'DELETE',
+    headers: getAuthHeaders()
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.message || 'Failed to delete user');
   }
   return data;
 }

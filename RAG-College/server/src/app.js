@@ -3,6 +3,7 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const mongoose = require('mongoose');
+const crypto = require('crypto');
 const { CLIENT_URL } = require('./config/env');
 const healthRoutes = require('./routes/health.routes');
 const departmentRoutes = require('./routes/department.routes');
@@ -10,11 +11,19 @@ const documentRoutes = require('./routes/document.routes');
 const chatRoutes = require('./routes/chat.routes');
 const imageRoutes = require('./routes/image.routes');
 const driveRoutes = require('./routes/drive.routes');
-const Image = require('./models/Image');
-const crypto = require('crypto');
 const authRoutes = require('./routes/auth.routes');
+const userRoutes = require('./routes/user.routes');
+const Image = require('./models/Image');
 
 const app = express();
+
+// Request ID Tracing Middleware (Must be before loggers and routes)
+app.use((req, res, next) => {
+  const reqId = req.headers['x-request-id'] || crypto.randomUUID();
+  req.id = reqId;
+  res.setHeader('X-Request-Id', reqId);
+  next();
+});
 
 // Middlewares
 app.use(
@@ -46,6 +55,7 @@ app.use('/api/chat', chatRoutes);
 app.use('/api/images', imageRoutes);
 app.use('/api/drive', driveRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
 
 // Direct route handler for frontend image streaming fallback (e.g. GET /:id/file)
 app.get('/:id/file', async (req, res) => {
@@ -95,15 +105,6 @@ app.use((err, req, res, next) => {
     success: false,
     message: err.message || 'Internal Server Error'
   });
-});
-
-
-// Request ID Tracing Middleware
-app.use((req, res, next) => {
-  const reqId = req.headers['x-request-id'] || crypto.randomUUID();
-  req.id = reqId;
-  res.setHeader('X-Request-Id', reqId);
-  next();
 });
 
 module.exports = app;

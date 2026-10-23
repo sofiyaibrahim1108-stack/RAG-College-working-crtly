@@ -18,7 +18,11 @@ import {
   registerUser,
   fetchCurrentUser,
   logoutUser,
-  removeAuthToken
+  removeAuthToken,
+  fetchUsers,
+  createUserRecord,
+  toggleUserStatusRecord,
+  deleteUserRecord
 } from './api';
 import { Pencil, AlertCircle, RotateCcw, Loader2 } from 'lucide-react';
 import { getFriendlyErrorMessage } from './utils/errorHandler';
@@ -30,6 +34,7 @@ import MessageItem from './components/MessageItem';
 import ChatComposer from './components/ChatComposer';
 import DocumentsView from './components/DocumentsView';
 import DepartmentsView from './components/DepartmentsView';
+import UsersView from './components/UsersView';
 import UploadModal from './components/UploadModal';
 import DepartmentModal from './components/DepartmentModal';
 import ConfirmModal from './components/ConfirmModal';
@@ -47,15 +52,8 @@ const DEFAULT_PROGRESS_STEPS = [
 ];
 
 const PENDING_QUERY_KEY_PREFIX = 'pending_rag_query_';
-
-// Streamed tokens are batched and written to React state at most this often,
-// so long answers do not re-render the markdown on every single token.
 const STREAM_FLUSH_MS = 40;
 
-/**
- * Batches streamed text before it is applied to the UI.
- * applyText(fullTextSoFar) is called after each flush.
- */
 function createStreamWriter(applyText) {
   let text = '';
   let timer = null;
@@ -160,12 +158,11 @@ function formatDbMessage(m) {
 }
 
 export default function App() {
-  // Navigation & View State with URL query param preservation
   const getInitialView = () => {
     try {
       const params = new URLSearchParams(window.location.search);
       const viewParam = params.get('view');
-      if (viewParam === 'documents' || viewParam === 'departments' || viewParam === 'chat') {
+      if (['documents', 'departments', 'chat', 'users'].includes(viewParam)) {
         return viewParam;
       }
     } catch {
@@ -178,7 +175,6 @@ export default function App() {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [searchConvQuery, setSearchConvQuery] = useState('');
 
-  // Sidebar Collapsed State (Desktop) with localStorage persistence
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
     try {
       return localStorage.getItem('rag_sidebar_collapsed') === 'true';
@@ -207,7 +203,6 @@ export default function App() {
     }
   };
 
-  // Theme State (Light / Dark) with persistence across page refresh
   const [theme, setTheme] = useState(() => {
     try {
       const saved = localStorage.getItem('rag_college_theme') || localStorage.getItem('theme');
@@ -235,7 +230,6 @@ export default function App() {
     setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
   };
 
-  // Sync activeView with URL so refresh preserves view
   const setActiveView = (view) => {
     setActiveViewState(view);
     try {
@@ -251,7 +245,6 @@ export default function App() {
     }
   };
 
-  // Listen to browser Back/Forward buttons
   useEffect(() => {
     const handlePopState = () => {
       setActiveViewState(getInitialView());
@@ -260,13 +253,16 @@ export default function App() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  // Data State
+  // Core Data State
   const [health, setHealth] = useState(null);
   const [departments, setDepartments] = useState([]);
   const [documents, setDocuments] = useState([]);
   const [conversations, setConversations] = useState([]);
+  const [usersList, setUsersList] = useState([]);
   const [isDocsLoading, setIsDocsLoading] = useState(false);
   const [isDeptsLoading, setIsDeptsLoading] = useState(false);
+  const [isUsersLoading, setIsUsersLoading] = useState(false);
+  const [isAnswerStreaming, setIsAnswerStreaming] = useState(false);
 
   // Active Chat State
   const [activeConvId, setActiveConvId] = useState(() => {
@@ -289,8 +285,6 @@ export default function App() {
     answerLengthRef.current = answerLength;
   }, [answerLength]);
 
-  // Visual Mode State (null / 'auto' | 'both' | 'text_only' | 'image_only')
-  // Ephemeral per message: never persisted in localStorage or across messages/chats/retries
   const [visualMode, setVisualMode] = useState(null);
   const visualModeRef = useRef(null);
 
@@ -298,7 +292,6 @@ export default function App() {
     visualModeRef.current = visualMode;
   }, [visualMode]);
 
-  // Clean up any legacy persisted visual mode key from localStorage
   useEffect(() => {
     try {
       localStorage.removeItem('rag_visual_mode');
@@ -307,10 +300,7 @@ export default function App() {
     }
   }, []);
 
-  // History loading tracker to prevent premature error card flashes
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
-
-  // Recovery & Polling State
   const [unresolvedStatus, setUnresolvedStatus] = useState(null);
   const [isCheckingStatus, setIsCheckingStatus] = useState(false);
   const [showRetryConfirm, setShowRetryConfirm] = useState(false);
@@ -327,10 +317,8 @@ export default function App() {
     }
   }, [activeConvId]);
 
-  // Inline Horizontal Progress Stepper State
   const [progressSteps, setProgressSteps] = useState(DEFAULT_PROGRESS_STEPS);
 
-  // Pinned Conversations State
   const [pinnedIds, setPinnedIds] = useState(() => {
     try {
       const saved = localStorage.getItem('rag_pinned_convs');
@@ -354,7 +342,7 @@ export default function App() {
     });
   };
 
-  // Modals State
+  // Modals & Notifications
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [reuploadDoc, setReuploadDoc] = useState(null);
   const [showDriveModal, setShowDriveModal] = useState(false);
@@ -367,13 +355,13 @@ export default function App() {
     item: null,
     title: '',
     name: '',
-    warning: ''
+    warning: '',
+    onConfirmAction: null
   });
 
-  // Toasts State
   const [toasts, setToasts] = useState([]);
 
-  // Auth State & Session Restoration
+  // Auth & Session
   const [currentUser, setCurrentUser] = useState(null);
   const [isAuthChecking, setIsAuthChecking] = useState(true);
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -420,7 +408,67 @@ export default function App() {
     setCurrentUser(null);
     setConversations([]);
     setMessages([]);
+    setUsersList([]);
     addToast('Signed out successfully', 'info');
+  };
+
+  // User Management Handlers (Admin Only)
+  const loadUsersData = async () => {
+    if (currentUser?.role !== 'admin') return;
+    try {
+      setIsUsersLoading(true);
+      const res = await fetchUsers();
+      setUsersList(res.data || []);
+    } catch (err) {
+      console.error('Error fetching users:', err);
+      addToast(getFriendlyErrorMessage(err, 'user-load') || 'Failed to load users list', 'error');
+    } finally {
+      setIsUsersLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (currentUser?.role === 'admin' && activeView === 'users') {
+      loadUsersData();
+    }
+  }, [currentUser, activeView]);
+
+  const handleCreateUser = async (formData) => {
+    try {
+      await createUserRecord(formData);
+      addToast('User account created successfully', 'success');
+      loadUsersData();
+    } catch (err) {
+      console.error('Create user error:', err);
+      addToast(err.response?.data?.message || err.message || 'Failed to create user', 'error');
+      throw err;
+    }
+  };
+
+  const handleToggleUserStatus = async (id, status) => {
+    try {
+      await toggleUserStatusRecord(id, status);
+      addToast(`User marked as ${status}`, 'success');
+      loadUsersData();
+    } catch (err) {
+      console.error('Toggle status error:', err);
+      addToast(err.response?.data?.message || err.message || 'Failed to update user status', 'error');
+    }
+  };
+
+  const handleTriggerDeleteUser = (targetUser) => {
+    if (!currentUser || currentUser.role !== 'admin') {
+      addToast('Admin privileges required to delete users.', 'error');
+      return;
+    }
+    setConfirmDelete({
+      isOpen: true,
+      type: 'user',
+      item: targetUser,
+      title: 'Delete User Account?',
+      name: `${targetUser.name} (${targetUser.email})`,
+      warning: 'This will completely remove this account and revoke their application access.'
+    });
   };
 
   const handleOpenUpload = () => {
@@ -498,7 +546,6 @@ export default function App() {
 
   useEffect(() => {
     if (activeView === 'chat' && messages.length > 0) {
-      // While text is streaming in, jump instantly; smooth scrolling would keep restarting
       const isStreamingNow = messages.some((m) => m.isStreaming);
       scrollToBottom(isStreamingNow ? 'auto' : 'smooth');
     }
@@ -508,7 +555,6 @@ export default function App() {
     isNearBottomRef.current = true;
   }, [activeConvId, activeView]);
 
-  // Initial Data Load
   const loadInitialData = async () => {
     try {
       const [healthData, deptsData, docsData, convsData] = await Promise.all([
@@ -581,7 +627,6 @@ export default function App() {
     }
   }, []);
 
-  // Poll for document status
   useEffect(() => {
     const hasActiveProcessing = documents.some((d) => {
       const s = (d.status || d.processingStatus || '').toLowerCase();
@@ -604,7 +649,6 @@ export default function App() {
     return () => clearInterval(intervalId);
   }, [documents]);
 
-  // Recovery polling helpers
   const stopRecoveryPolling = () => {
     if (pollingTimerRef.current) {
       clearInterval(pollingTimerRef.current);
@@ -617,22 +661,18 @@ export default function App() {
     stopRecoveryPolling();
 
     const pollStartTime = Date.now();
-    const MAX_POLLING_DURATION_MS = 120000; // 120s recovery deadline (well past 90s)
+    const MAX_POLLING_DURATION_MS = 120000;
 
     pollingTimerRef.current = setInterval(async () => {
-      // 1. Session check: cancel immediately if user navigated away
       if (activeConvIdRef.current !== sessionId) {
         stopRecoveryPolling();
         return;
       }
 
-      // 2. Prevent overlapping polling requests
       if (isPollingRef.current) return;
 
-      // 3. Check recovery deadline
       if (Date.now() - pollStartTime >= MAX_POLLING_DURATION_MS) {
         stopRecoveryPolling();
-        // Deadline expired: do NOT assume backend failed. Stop polling and show "Generation status unknown"
         setIsSending(false);
         isSendingRef.current = false;
         setUnresolvedStatus({
@@ -660,7 +700,6 @@ export default function App() {
           setUnresolvedStatus(null);
           setShowRetryConfirm(false);
         } else {
-          // Still processing on backend: keep messages up to date
           if (dbMsgs.length > 0) {
             setMessages(dbMsgs);
           }
@@ -708,7 +747,6 @@ export default function App() {
     setUnresolvedStatus(null);
     setShowRetryConfirm(false);
 
-    // If the orphaned message had a real MongoDB ID on the server, truncate it so the server doesn't duplicate user messages
     if (userMsg?.id && !String(userMsg.id).startsWith('pending-') && !String(userMsg.id).startsWith('user-')) {
       try {
         await truncateChatHistory(activeConvId, userMsg.id);
@@ -717,18 +755,15 @@ export default function App() {
       }
     }
 
-    // Remove the orphaned user message from local messages state
     setMessages((prev) => {
       if (!userMsg?.id) return prev;
       const idx = prev.findIndex((m) => m.id === userMsg.id);
       return idx !== -1 ? prev.slice(0, idx) : prev;
     });
 
-    // Send the question through handleSendMessage with visualMode explicitly null
     await handleSendMessage(questionToRetry, null);
   };
 
-  // Load chat history & restore pending state
   useEffect(() => {
     setEditingMessage(null);
     setUnresolvedStatus(null);
@@ -754,7 +789,6 @@ export default function App() {
       const hasValidPending = pending && !isStale;
 
       if (hasValidPending) {
-        // Step 4: restore pending question loading state and display processing indicator
         setIsSending(true);
         isSendingRef.current = true;
         setProgressSteps([
@@ -764,7 +798,6 @@ export default function App() {
           { id: 'llm', shortTitle: 'Preparing', title: 'Preparing your answer', status: 'pending', detail: 'Synthesizing response...' }
         ]);
 
-        // Show pending user message immediately
         const placeholderUserMsg = {
           id: `pending-${pending.timestamp}`,
           role: 'user',
@@ -773,32 +806,27 @@ export default function App() {
         };
         setMessages([placeholderUserMsg]);
       } else {
-        // If no pending query for this session, ensure not in sending state
         if (!isSendingRef.current) {
           setIsSending(false);
         }
       }
 
       try {
-        // Step 5: Fetch latest session history
         const hist = await fetchChatHistory(currentSessionId);
         if (!isCurrentSession || activeConvIdRef.current !== currentSessionId) return;
 
         const dbMsgs = (hist.data || []).map(formatDbMessage);
 
         if (hasValidPending) {
-          // Step 6: Check whether pending question already has assistant response
           const assistantFound = hasAssistantResponseForPending(dbMsgs, pending.question);
 
           if (assistantFound) {
-            // Assistant response already exists!
             setMessages(dbMsgs);
             clearPendingQuery(currentSessionId);
             setIsSending(false);
             isSendingRef.current = false;
             setUnresolvedStatus(null);
           } else {
-            // Assistant response not yet present: keep processing indicator and start polling
             const userMsgInDb = dbMsgs.find(
               (m) => m.role === 'user' && m.content.trim() === pending.question.trim()
             );
@@ -822,10 +850,8 @@ export default function App() {
             startRecoveryPolling(currentSessionId, pending.question);
           }
         } else {
-          // Normal session load without pending query
           setMessages(dbMsgs);
 
-          // Check if last message is a recent user message (within 90s) still being generated on server
           const lastDbMsg = dbMsgs.length > 0 ? dbMsgs[dbMsgs.length - 1] : null;
           const msgAgeMs = lastDbMsg?.createdAt ? Date.now() - new Date(lastDbMsg.createdAt).getTime() : Infinity;
           const isRecentInFlightUser = lastDbMsg?.role === 'user' && msgAgeMs < 90000;
@@ -934,20 +960,15 @@ export default function App() {
     setRegeneratingId(null);
     setUnresolvedStatus(null);
     setShowRetryConfirm(false);
-    // Keep whatever text was already streamed, but it is no longer "live"
     setMessages((prev) => prev.map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m)));
   };
 
-  // Send Message with Stepper Animation
   const handleSendMessage = async (textToSend, explicitVisualMode) => {
     if (isSendingRef.current) return;
 
     const query = (textToSend || inputQuery).trim();
     if (!query || isSending) return;
 
-    // visualMode is ephemeral for the current message only:
-    // If textToSend is provided without explicitVisualMode (e.g. suggestion chip), mode is null.
-    // Otherwise use current visualMode selection and immediately clear it for subsequent messages.
     const messageVisualMode = explicitVisualMode !== undefined
       ? explicitVisualMode
       : (textToSend ? null : visualModeRef.current);
@@ -967,7 +988,6 @@ export default function App() {
     const isCurrentRequest = () =>
       activeRequestIdRef.current === currentRequestId && activeConvIdRef.current === requestSessionId;
 
-    // Reset progress steps for the new query
     setProgressSteps([
       { id: 'router', shortTitle: 'Understanding', title: 'Understanding your question', status: 'active', detail: 'Understanding your question...' },
       { id: 'retrieval', shortTitle: 'Searching', title: 'Searching relevant information', status: 'pending', detail: 'Awaiting question analysis...' },
@@ -975,7 +995,6 @@ export default function App() {
       { id: 'llm', shortTitle: 'Preparing', title: 'Preparing your answer', status: 'pending', detail: 'Synthesizing response...' }
     ]);
 
-    // Timed stepper animations
     const timer1 = setTimeout(() => {
       if (isSendingRef.current && isCurrentRequest()) {
         setProgressSteps((prev) => [
@@ -1046,7 +1065,6 @@ export default function App() {
     isNearBottomRef.current = true;
     setTimeout(() => scrollToBottom('smooth', true), 50);
 
-    // Save pending query in localStorage
     setPendingQuery(requestSessionId, query);
 
     setConversations((prev) => {
@@ -1062,7 +1080,6 @@ export default function App() {
       });
     });
 
-    // The assistant bubble is created when the first piece of text arrives
     const streamMsgId = `stream-${Date.now()}`;
     let firstTokenSeen = false;
 
@@ -1117,8 +1134,6 @@ export default function App() {
       });
 
       writer.cancel();
-
-      // Clear pending query on success
       clearPendingQuery(requestSessionId);
 
       if (activeRequestIdRef.current !== currentRequestId) return;
@@ -1126,7 +1141,6 @@ export default function App() {
 
       clearStepperTimers();
 
-      // Mark all steps finished
       setProgressSteps((prev) =>
         prev.map((step) => ({
           ...step,
@@ -1151,8 +1165,6 @@ export default function App() {
         createdAt: new Date().toISOString()
       };
 
-      // Replace the live streamed bubble with the final answer (sources, citations, suggestions).
-      // Answers that never streamed (for example table lookups) are simply appended.
       setMessages((prev) =>
         prev.some((m) => m.id === streamMsgId)
           ? prev.map((m) => (m.id === streamMsgId ? assistantMsg : m))
@@ -1160,8 +1172,6 @@ export default function App() {
       );
     } catch (err) {
       writer.cancel();
-
-      // Clear pending query on confirmed failure
       clearPendingQuery(requestSessionId);
 
       if (activeRequestIdRef.current !== currentRequestId) return;
@@ -1179,7 +1189,6 @@ export default function App() {
         sources: [],
         createdAt: new Date().toISOString()
       };
-      // Drop any half-streamed bubble before showing the error card
       setMessages((prev) => [...prev.filter((m) => m.id !== streamMsgId), errorMsg]);
       addToast(friendlyText, 'error');
     } finally {
@@ -1194,7 +1203,6 @@ export default function App() {
   const handleRegenerateMessage = async (targetMsg, targetIndex) => {
     if (isSending || isSendingRef.current || regeneratingId) return;
 
-    // Find the user query that preceded this assistant message
     let userQuery = '';
     let userMsgObj = null;
     for (let i = targetIndex - 1; i >= 0; i--) {
@@ -1226,10 +1234,8 @@ export default function App() {
     setUnresolvedStatus(null);
     setShowRetryConfirm(false);
 
-    // Save pending query in localStorage for retry
     setPendingQuery(requestSessionId, userQuery);
 
-    // Reset progress steps for regeneration
     setProgressSteps([
       { id: 'router', shortTitle: 'Understanding', title: 'Understanding your question', status: 'active', detail: 'Re-evaluating your question...' },
       { id: 'retrieval', shortTitle: 'Searching', title: 'Searching relevant information', status: 'pending', detail: 'Awaiting question analysis...' },
@@ -1276,7 +1282,6 @@ export default function App() {
       clearTimeout(timer3);
     };
 
-    // If server history has this assistant message, clean it up before sending
     const targetIdText = String(targetMsg.id || '');
     if (
       targetIdText &&
@@ -1291,7 +1296,6 @@ export default function App() {
       }
     }
 
-    // The new answer streams into the message being regenerated
     const writer = createStreamWriter((text) => {
       if (!isCurrentRequest() || !text) return;
       setMessages((prev) =>
@@ -1331,8 +1335,6 @@ export default function App() {
       });
 
       writer.cancel();
-
-      // Clear pending query on success
       clearPendingQuery(requestSessionId);
 
       if (activeRequestIdRef.current !== currentRequestId) return;
@@ -1354,15 +1356,12 @@ export default function App() {
         createdAt: new Date().toISOString()
       };
 
-      // Replace the assistant response in-place (no duplicate user message)
       setMessages((prev) =>
         prev.map((m, idx) => (m.id === targetMsg.id || idx === targetIndex ? updatedAssistantMsg : m))
       );
       addToast('Answer regenerated', 'success');
     } catch (err) {
       writer.cancel();
-
-      // Clear pending query on confirmed failure
       clearPendingQuery(requestSessionId);
 
       if (activeRequestIdRef.current !== currentRequestId) return;
@@ -1547,10 +1546,14 @@ export default function App() {
           handleNewChat();
         }
         addToast('Conversation permanently deleted', 'info');
+      } else if (type === 'user') {
+        await deleteUserRecord(item._id);
+        setUsersList((prev) => prev.filter((u) => u._id !== item._id));
+        addToast('User account deleted permanently', 'success');
       }
     } catch (err) {
       console.error('Delete execution error:', err);
-      addToast(getFriendlyErrorMessage(err, type === 'document' ? 'delete-doc' : 'delete-dept'), 'error');
+      addToast(getFriendlyErrorMessage(err, type === 'document' ? 'delete-doc' : 'delete-dept') || err.message, 'error');
     }
   };
 
@@ -1624,7 +1627,9 @@ export default function App() {
               ? 'Knowledge Base'
               : activeView === 'departments'
                 ? 'Departments'
-                : null
+                : activeView === 'users'
+                  ? 'User Management'
+                  : null
           }
         />
 
@@ -1641,8 +1646,8 @@ export default function App() {
                       setInputQuery={setInputQuery}
                       onSendMessage={() => handleSendMessage()}
                       onStopGeneration={handleStopGeneration}
-                      onOpenUpload={() => setShowUploadModal(true)}
-                      onOpenDrive={() => setShowDriveModal(true)}
+                      onOpenUpload={handleOpenUpload}
+                      onOpenDrive={handleOpenDrive}
                       isSending={isSending}
                       selectedDepartmentName={activeDeptName}
                       visualMode={visualMode}
@@ -1703,13 +1708,12 @@ export default function App() {
                               </span>
                             </div>
 
-                            {/* Horizontal Numbered Stepper inside the assistant bubble */}
                             <HorizontalStepper steps={progressSteps} />
                           </div>
                         </div>
                       )}
 
-                      {/* Generation Status Unknown / Generation Interrupted Recovery Card */}
+                      {/* Generation Recovery Card */}
                       {(() => {
                         if (isSending || isHistoryLoading || regeneratingId) return null;
                         const isUnknown = unresolvedStatus?.type === 'unknown' && unresolvedStatus?.sessionId === activeConvId;
@@ -1884,9 +1888,22 @@ export default function App() {
             currentUser={currentUser}
           />
         )}
+
+        {/* 3. Admin-Only Users View */}
+        {activeView === 'users' && currentUser?.role === 'admin' && (
+          <UsersView
+            users={usersList}
+            departments={departments}
+            isLoading={isUsersLoading}
+            onCreateUser={handleCreateUser}
+            onToggleStatus={handleToggleUserStatus}
+            onDeleteUser={handleTriggerDeleteUser}
+            currentUser={currentUser}
+          />
+        )}
       </main>
 
-      {/* 3. Modals */}
+      {/* 4. Modals */}
       <AuthModal
         isOpen={showAuthModal}
         onClose={() => setShowAuthModal(false)}
@@ -1951,7 +1968,7 @@ export default function App() {
         hasActiveMessages={messages.length > 0}
       />
 
-      {/* 4. Toast Notifications */}
+      {/* 5. Toasts */}
       <Toast toasts={toasts} onDismiss={removeToast} />
     </div>
   );
