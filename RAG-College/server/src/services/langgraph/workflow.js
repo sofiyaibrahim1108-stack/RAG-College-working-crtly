@@ -87,7 +87,7 @@ const config = {
       'You are a polite, helpful AI assistant. Respond warmly and concisely in 1-2 sentences.',
     contextHeader: 'VERIFIED SOURCES LIST',
 
-    generationSystem: `You are a verified knowledge assistant.
+   generationSystem: `You are a verified knowledge assistant.
 Answer the question based STRICTLY and ONLY on the facts present in the verified context.
 
 RULES:
@@ -108,26 +108,27 @@ RULES:
 
 4. REJECTION:
    - The context may contain unrelated sources; ignore those and use only the sources that relate to the question.
-   - The context may express the information differently from the question (examples, tables, code, symbols). Use it if it answers the question.
+   - A source is relevant only if it addresses the same subject, entity, event and time period that the question asks about. Sharing a word or a general topic with the question is NOT enough.
+   - The context may express the information differently from the question (examples, tables, code, symbols). Use it only if it actually answers the question.
    - If some of the question can be answered, answer that part and state which part is missing.
-   - Output EXACTLY the "not found" sentence provided ONLY if no source in the context relates to the question at all.
+   - If the context does not explicitly state the answer, do not guess, infer, or answer with a related fact. Output EXACTLY the "not found" sentence provided.
 
 5. FORMATTING:
    - Write the answer in your own words as clear sentences. Do not wrap the whole answer in quotation marks.
    - Wrap every code snippet, operator, symbol, keyword, function name and literal value in single backticks, for example \`value\`, so it renders exactly as written.`,
 
-    generationRetrySystem: `You are a verified knowledge assistant.
-A previous attempt wrongly concluded the context had no answer. Read every source in the verified context again.
+generationRetrySystem: `You are a verified knowledge assistant.
+A previous attempt concluded the context had no answer. Read every source in the verified context again.
 
 RULES:
 1. Use only facts present in the verified context. Never add outside facts.
-2. The relevant information may be written as examples, code, tables, symbols or lists rather than as a direct explanation. Explain it from what is shown.
-3. Cite sources with their exact SOURCE number, like [1] or [1, 2]. Only cite numbers that exist.
-4. If only part of the question is covered, answer that part and say what is missing.
-5. Output EXACTLY the "not found" sentence provided ONLY if no source relates to the question at all.
-6. Write in your own words as clear sentences, not wrapped in quotation marks. Wrap every code snippet, operator, symbol, keyword, function name and literal value in single backticks so it renders exactly as written.`
+2. The relevant information may be written as examples, code, tables, symbols or lists rather than as a direct explanation. Explain it only if it actually answers the question.
+3. A source is relevant only if it addresses the same subject, entity, event and time period that the question asks about. Sharing a word or a general topic is NOT enough.
+4. Cite sources with their exact SOURCE number, like [1] or [1, 2]. Only cite numbers that exist.
+5. If only part of the question is covered, answer that part and say what is missing.
+6. If the context does not explicitly state the answer, do not infer it. Output EXACTLY the "not found" sentence provided.
+7. Write in your own words as clear sentences, not wrapped in quotation marks. Wrap every code snippet, operator, symbol, keyword, function name and literal value in single backticks so it renders exactly as written.`
   },
-
   messages: {
     casualFallback: 'Hello! How can I assist you today?',
     notFound: "I couldn't find this information in the uploaded documents.",
@@ -401,6 +402,7 @@ async function casualNode(state, runConfig) {
 }
 
 // 4. Tabular Node
+// 4. Tabular Node
 async function tabularNode(state) {
   state.timer?.start('tabular');
   const t0 = Date.now();
@@ -410,7 +412,9 @@ async function tabularNode(state) {
       documentId: state.documentId || null,
       blockAll: isScopeUnresolved(state)
     };
-    const tabularResult = await executeTabularQuery(activeQueryOf(state), scope);
+    // Use the user's original question: the router's rewritten searchQuery can lose the question
+    // (for example it may return only a table name), and the SQL step needs the real wording.
+    const tabularResult = await executeTabularQuery(state.question || activeQueryOf(state), scope);
     const status = tabularResult.status || '';
 
     if (TAB.fallbackStatuses.includes(status)) {
@@ -986,6 +990,7 @@ async function generatorNode(state, runConfig) {
   }
 }
 
+// services/langgraph/workflow.js
 function filterSupportingSources(answer, sources, options = {}) {
   const { isVisualQuery = false, isFallback = false } = options || {};
   if (!sources || sources.length === 0) return { answer, sources: [] };

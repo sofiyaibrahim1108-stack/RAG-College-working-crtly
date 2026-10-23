@@ -72,10 +72,8 @@ const CONFIG = {
 7. For text matching use case-insensitive comparison: LOWER([Column]) LIKE '%value%' or LOWER([Column]) = 'value'.
 8. For totals, averages and breakdowns use SUM / AVG / COUNT / MIN / MAX, with GROUP BY for breakdowns.
 9. If the question asks for an attribute that does not exist and cannot be derived from the listed columns, or it is about a different kind of thing than the records in this table (even when one column word happens to match), output exactly: ${marker}: <what the question asks for>
-10. When the question mentions a value that is not exactly one of the listed distinct values but clearly refers to one of them (an abbreviation, short form or another name), use the listed value in the condition.`
-  },
-
-  // marker is the citation marker of the source, [1] unless several tables are answered together.
+10. When the question mentions a value that is not exactly one of the listed distinct values but clearly refers to one of them (an abbreviation, short form or another name), use the listed value in the condition.
+11. Return only what the question asks for, but always keep the column(s) that identify each row together with the measured value. If the question asks which/who/what has the highest, lowest, most or least, select the identifying columns and the measured value and follow rule 5; never return a bare MAX or MIN on its own. If it asks for a count or total, aggregate. If the question combines several measures with "or" or "and", write the query for the first measure that matches a listed column rather than giving up. Never return every row that merely matches a filter.`},  // marker is the citation marker of the source, [1] unless several tables are answered together.
   messages: {
     noDatasets: 'No tabular datasets loaded.',
     loadFailed: 'I could not read the uploaded tables right now. Please try again.',
@@ -860,8 +858,9 @@ async function answerOnTable({ dataset, sheet }, queryText) {
       continue;
     }
 
-    const unsupported = readUnsupported(sql);
+      const unsupported = readUnsupported(sql);
     if (unsupported !== null) {
+      console.log(`[TabularService] UNSUPPORTED on ${where}: ${unsupported}`);
       return {
         status: 'unsupported',
         response: {

@@ -49,7 +49,6 @@ export default function GoogleDriveModal({
     !isNaN(Number(selectedFile.size)) &&
     Number(selectedFile.size) > LARGE_FILE_THRESHOLD;
 
-  // Check auth status whenever modal opens
   useEffect(() => {
     if (isOpen) {
       setErrorMsg('');
@@ -169,10 +168,11 @@ export default function GoogleDriveModal({
       setDeptError('');
       onClose();
     } catch (err) {
-      if (err.duplicate) {
-        setDuplicateWarning(err.message);
+      const responseData = err.response?.data;
+      if (responseData?.duplicate || err.duplicate) {
+        setDuplicateWarning(responseData?.message || err.message);
       } else {
-        setErrorMsg(getFriendlyErrorMessage(err, 'drive'));
+        setErrorMsg(responseData?.message || getFriendlyErrorMessage(err, 'drive'));
       }
     } finally {
       setIsImporting(false);
@@ -246,7 +246,6 @@ export default function GoogleDriveModal({
         aria-modal="true"
         aria-labelledby="gdrive-modal-title"
       >
-        {/* Fixed Header */}
         <div className="modal-header-row">
           <div className="modal-header-text">
             <h2 id="gdrive-modal-title" className="modal-header-title">
@@ -267,7 +266,6 @@ export default function GoogleDriveModal({
           </button>
         </div>
 
-        {/* Scrollable Modal Body */}
         <div className="modal-content-body gdrive-modal-body">
           {isLoadingStatus ? (
             <div style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--text-secondary)' }}>
@@ -290,7 +288,6 @@ export default function GoogleDriveModal({
               </div>
             </div>
           ) : !authStatus.authenticated ? (
-            /* Auth / Empty State */
             <div className="gdrive-empty-auth-box">
               <div className="gdrive-empty-icon-circle">
                 <GoogleDriveIcon size={38} />
@@ -313,9 +310,7 @@ export default function GoogleDriveModal({
               </div>
             </div>
           ) : (
-            /* Connected Content */
             <>
-              {/* 1. Department Selection (AT THE TOP) */}
               <MultiSelectDropdown
                 ref={deptDropdownRef}
                 label="Department"
@@ -331,7 +326,6 @@ export default function GoogleDriveModal({
                 id="gdrive-dept-select"
               />
 
-              {/* 2. Search Bar & Status Controls */}
               <div className="gdrive-top-bar">
                 <div className="gdrive-search-wrap">
                   <Search size={16} className="gdrive-search-icon" />
@@ -384,7 +378,6 @@ export default function GoogleDriveModal({
                 </div>
               </div>
 
-              {/* 3. Available Files Heading */}
               <div className="gdrive-section-title-row">
                 <span className="gdrive-section-title">Available files</span>
                 <span className="gdrive-section-count">
@@ -392,7 +385,6 @@ export default function GoogleDriveModal({
                 </span>
               </div>
 
-              {/* 4. Scrollable Available Files List ONLY */}
               <div className="gdrive-file-list" role="listbox" aria-label="Available Google Drive files">
                 {isLoadingFiles ? (
                   <div style={{ padding: '36px 20px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '13.5px' }}>
@@ -483,11 +475,11 @@ export default function GoogleDriveModal({
                 )}
               </div>
 
-              {/* 5. Duplicate Warning Dialog */}
               {duplicateWarning && (
-                <div style={{ padding: '12px 16px', background: '#FEF3C7', border: '1px solid #FCD34D', borderRadius: '10px' }}>
-                  <div style={{ fontSize: '13.5px', color: '#92400E', fontWeight: '600', marginBottom: '8px' }}>
-                    {duplicateWarning}
+                <div style={{ padding: '14px 16px', background: '#FEF3C7', border: '1px solid #FCD34D', borderRadius: '10px', marginTop: '14px' }}>
+                  <div style={{ fontSize: '13.5px', color: '#92400E', fontWeight: '600', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <AlertCircle size={18} />
+                    <span>{duplicateWarning}</span>
                   </div>
                   <div style={{ display: 'flex', gap: '10px' }}>
                     <button
@@ -527,7 +519,6 @@ export default function GoogleDriveModal({
             </>
           )}
 
-          {/* Dynamic Loading Status UI */}
           {isImporting && (
             <div className="upload-progress-container" style={{ margin: '14px 0' }}>
               <div className="upload-progress-header">
@@ -544,26 +535,25 @@ export default function GoogleDriveModal({
             </div>
           )}
 
-          {/* General Error Message */}
           {errorMsg && (
             <div style={{
               display: 'flex',
               alignItems: 'center',
               gap: '10px',
-              padding: '10px 14px',
+              padding: '12px 14px',
               background: '#FEF2F2',
               border: '1px solid #FEE2E2',
               borderRadius: '8px',
               color: 'var(--danger)',
-              fontSize: '13px'
+              fontSize: '13px',
+              marginTop: '12px'
             }}>
-              <AlertCircle size={16} style={{ flexShrink: 0 }} />
+              <AlertCircle size={18} style={{ flexShrink: 0 }} />
               <span>{errorMsg}</span>
             </div>
           )}
         </div>
 
-        {/* Fixed Footer */}
         {authStatus.authenticated && (
           <div className="modal-footer-row">
             <button

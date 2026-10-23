@@ -21,6 +21,17 @@ const documentSchema = new mongoose.Schema(
       type: String,
       default: null
     },
+    // SHA-256 Hash for duplicate detection across uploads
+    fileHash: {
+      type: String,
+      default: null,
+      index: true
+    },
+    // Version increment counter for updated files with the same filename
+    version: {
+      type: Number,
+      default: 1
+    },
     source: {
       type: String,
       enum: ['upload', 'google_drive'],
@@ -81,5 +92,6 @@ documentSchema.virtual('processingStatus').get(function () {
 });
 
 documentSchema.index({ departmentIds: 1, status: 1 });
+documentSchema.index({ fileHash: 1 });
 
 module.exports = mongoose.model('Document', documentSchema);

@@ -1,22 +1,12 @@
 const express = require('express');
 const router = express.Router();
+const chatController = require('../controllers/chat.controller');
 const { protect } = require('../middlewares/auth.middleware');
-const {
-  sendMessage,
-  getHistory,
-  listConversations,
-  deleteConversation,
-  truncateHistoryFrom
-} = require('../controllers/chat.controller');
 
-// Protect chat history, conversation list, and Q&A from unauthenticated access
-router.use(protect);
-
-router.post('/', sendMessage);
-router.get('/history/:sessionId', getHistory);
-router.delete('/history/:sessionId/from/:messageId', truncateHistoryFrom);
-router.get('/conversations', listConversations);
-router.delete('/conversations/:sessionId', deleteConversation);
+// protect middleware moolama dhaan req.user kedaikkum
+router.post('/', protect, chatController.sendMessage);
+router.get('/conversations', protect, chatController.listConversations);
+router.get('/history/:sessionId', protect, chatController.getHistory);
+router.delete('/conversations/:sessionId', protect, chatController.deleteConversation);
 
 module.exports = router;
-

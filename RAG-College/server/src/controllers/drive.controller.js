@@ -1,12 +1,24 @@
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const mongoose = require('mongoose');
 const googleDriveService = require('../services/google-drive.service');
 const Document = require('../models/Document');
 const Department = require('../models/Department');
-const { processDocument } = require('../services/processor.service');const { CLIENT_URL } = require('../config/env');
+const { processDocument } = require('../services/processor.service');
+const { CLIENT_URL } = require('../config/env');
 
 const UPLOAD_DIR = path.resolve(__dirname, '../../data/uploads');
+
+function computeFileHash(filePath) {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash('sha256');
+    const stream = fs.createReadStream(filePath);
+    stream.on('data', (chunk) => hash.update(chunk));
+    stream.on('end', () => resolve(hash.digest('hex')));
+    stream.on('error', (err) => reject(err));
+  });
+}
 
 // GET /api/drive/status
 exports.getAuthStatus = async (req, res) => {
@@ -110,11 +122,10 @@ exports.listFiles = async (req, res) => {
       search
     });
 
-    // Check which files have already been imported into MongoDB
     const driveIds = result.files.map((f) => f.id);
     const existingDocs = await Document.find({
       driveFileId: { $in: driveIds }
-    }).select('driveFileId _id status originalFilename').lean();
+    }).select('driveFileId _id status originalFilename version').lean();
 
     const existingMap = new Map();
     existingDocs.forEach((d) => existingMap.set(d.driveFileId, d));
@@ -125,7 +136,8 @@ exports.listFiles = async (req, res) => {
         ...f,
         isImported: Boolean(existing),
         importedDocumentId: existing ? existing._id : null,
-        importedStatus: existing ? existing.status : null
+        importedStatus: existing ? existing.status : null,
+        version: existing ? existing.version || 1 : null
       };
     });
 
@@ -183,13 +195,12 @@ exports.importFile = async (req, res) => {
       });
     }
 
-    // Step 6: Avoid duplicate imports by default
     const existingDoc = await Document.findOne({ driveFileId: fileId });
     if (existingDoc && !forceReimport) {
       return res.status(409).json({
         success: false,
         duplicate: true,
-        message: `File has already been imported into knowledge base as "${existingDoc.originalFilename}".`,
+        message: `Duplicate file detected! This Drive file was already imported as "${existingDoc.originalFilename}" (Version ${existingDoc.version || 1}).`,
         data: existingDoc
       });
     }
@@ -201,7 +212,6 @@ exports.importFile = async (req, res) => {
       });
     }
 
-    // Parse and validate departmentIds
     if (typeof departmentIds === 'string') {
       try {
         departmentIds = JSON.parse(departmentIds);
@@ -232,7 +242,6 @@ exports.importFile = async (req, res) => {
       });
     }
 
-    // Download/export from Google Drive (or handle simulated file in test mode)
     let downloaded;
     if (req.body.simulatedFilePath && fs.existsSync(req.body.simulatedFilePath)) {
       const simPath = req.body.simulatedFilePath;
@@ -265,13 +274,32 @@ exports.importFile = async (req, res) => {
       downloaded = await googleDriveService.downloadFile(fileId, UPLOAD_DIR);
     }
 
+    const fileHash = await computeFileHash(downloaded.filePath);
+
+    const hashDuplicate = await Document.findOne({ fileHash });
+    if (hashDuplicate && (!existingDoc || String(hashDuplicate._id) !== String(existingDoc._id)) && !forceReimport) {
+      if (fs.existsSync(downloaded.filePath)) fs.unlinkSync(downloaded.filePath);
+      return res.status(409).json({
+        success: false,
+        duplicate: true,
+        message: `Duplicate content detected! This exact file already exists in database as "${hashDuplicate.originalFilename}" (Version ${hashDuplicate.version || 1}).`
+      });
+    }
+
+    const previousVersionDoc = await Document.findOne({
+      originalFilename: downloaded.originalFilename
+    }).sort({ version: -1 });
+
+    const nextVersion = previousVersionDoc ? (previousVersionDoc.version || 1) + 1 : 1;
+
     let doc;
     if (existingDoc && forceReimport) {
-      // Re-use existing document record if re-importing
       existingDoc.originalFilename = downloaded.originalFilename;
       existingDoc.fileType = downloaded.fileType;
       existingDoc.fileSize = downloaded.fileSize;
       existingDoc.storagePath = downloaded.filePath;
+      existingDoc.fileHash = fileHash;
+      existingDoc.version = (existingDoc.version || 1) + 1;
       existingDoc.source = 'google_drive';
       existingDoc.driveFileId = fileId;
       existingDoc.driveMetadata = {
@@ -289,6 +317,8 @@ exports.importFile = async (req, res) => {
         fileType: downloaded.fileType,
         fileSize: downloaded.fileSize,
         storagePath: downloaded.filePath,
+        fileHash,
+        version: nextVersion,
         source: 'google_drive',
         driveFileId: fileId,
         driveMetadata: {
@@ -303,16 +333,20 @@ exports.importFile = async (req, res) => {
       await doc.save();
     }
 
-    // Process through the existing pipeline
+    for (const dId of validDeptIds) {
+      const count = await Document.countDocuments({ departmentIds: dId });
+      await Department.findByIdAndUpdate(dId, { documentCount: count });
+    }
+
     console.log(`[Google Drive Import] Processing document through existing RAG pipeline: "${doc.originalFilename}" (${doc._id})...`);
-await processDocument(doc._id);
+    await processDocument(doc._id);
     const updatedDoc = await Document.findById(doc._id).populate('departmentIds', 'name code');
     const isSuccess = updatedDoc && updatedDoc.status === 'completed';
 
     return res.status(isSuccess ? 201 : 422).json({
       success: isSuccess,
       message: isSuccess
-        ? `Document "${doc.originalFilename}" successfully imported from Google Drive and indexed.`
+        ? `Document "${doc.originalFilename}" (Version ${doc.version}) successfully imported from Google Drive and indexed.`
         : `Document "${doc.originalFilename}" was imported but failed processing: ${updatedDoc?.processingError || 'Unknown error'}`,
       data: updatedDoc
     });

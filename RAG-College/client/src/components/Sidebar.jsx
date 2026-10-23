@@ -30,7 +30,7 @@ function formatRelativeTime(dateString) {
   if (diffSec < 60) return 'Just now';
   const diffMin = Math.floor(diffSec / 60);
   if (diffMin < 60) return `${diffMin} ${diffMin === 1 ? 'minute' : 'minutes'} ago`;
-  const diffHour = Math.floor(diffMin / 60);
+  const diffHour = Math.floor(diffMin / 24);
   if (diffHour < 24) return `${diffHour} ${diffHour === 1 ? 'hour' : 'hours'} ago`;
   const diffDays = Math.floor(diffHour / 24);
   if (diffDays === 1) return '1 day ago';
@@ -362,38 +362,31 @@ export default function Sidebar({
             </div>
           )}
 
-          {/* 3. Knowledge Base */}
-          <button
-            type="button"
-            className={`sidebar-nav-item ${activeView === 'documents' ? 'active' : ''}`}
-            title="Knowledge Base"
-            onClick={() => handleNavClick('documents')}
-          >
-            <BookOpen size={17} strokeWidth={1.9} />
-            {!isCollapsed && <span>Knowledge Base</span>}
-          </button>
+          {/* 3. Knowledge Base (Admin Only) */}
+          {currentUser?.role === 'admin' && (
+            <button
+              type="button"
+              className={`sidebar-nav-item ${activeView === 'documents' ? 'active' : ''}`}
+              title="Knowledge Base"
+              onClick={() => handleNavClick('documents')}
+            >
+              <BookOpen size={17} strokeWidth={1.9} />
+              {!isCollapsed && <span>Knowledge Base</span>}
+            </button>
+          )}
 
-          {/* 4. Departments */}
-          {/* <button
-            type="button"
-            className={`sidebar-nav-item ${activeView === 'departments' ? 'active' : ''}`}
-            title="Departments"
-            onClick={() => handleNavClick('departments')}
-          >
-            <Building2 size={17} strokeWidth={1.9} />
-            {!isCollapsed && <span>Departments</span>}
-          </button> */}
-
-          {/* 4. Departments */}
-          <button
-            type="button"
-            className={`sidebar-nav-item ${activeView === 'departments' ? 'active' : ''}`}
-            title="Departments"
-            onClick={() => handleNavClick('departments')}
-          >
-            <Building2 size={17} strokeWidth={1.9} />
-            {!isCollapsed && <span>Departments</span>}
-          </button>
+          {/* 4. Departments (Admin Only) */}
+          {currentUser?.role === 'admin' && (
+            <button
+              type="button"
+              className={`sidebar-nav-item ${activeView === 'departments' ? 'active' : ''}`}
+              title="Departments"
+              onClick={() => handleNavClick('departments')}
+            >
+              <Building2 size={17} strokeWidth={1.9} />
+              {!isCollapsed && <span>Departments</span>}
+            </button>
+          )}
 
           {/* 5. Users & Staff (Admin Only) */}
           {currentUser?.role === 'admin' && (
@@ -421,20 +414,6 @@ export default function Sidebar({
             <Settings size={17} strokeWidth={1.9} />
             {!isCollapsed && <span>Settings</span>}
           </button>
-
-          {/* 5. Settings */}
-          {/* <button
-            type="button"
-            className="sidebar-nav-item"
-            title="Settings"
-            onClick={() => {
-              if (onOpenSettings) onOpenSettings();
-              if (onCloseMobile) onCloseMobile();
-            }}
-          >
-            <Settings size={17} strokeWidth={1.9} />
-            {!isCollapsed && <span>Settings</span>}
-          </button> */}
         </div>
 
         {/* Divider & Scrollable History Area (Expanded only) */}
@@ -477,23 +456,25 @@ export default function Sidebar({
         {/* Sidebar Bottom: Knowledge Base + Student Profile */}
         {!isCollapsed ? (
           <div className="sidebar-bottom-container">
-            {/* Knowledge Base Row */}
-            <div
-              className="sidebar-bottom-card"
-              onClick={() => handleNavClick('documents')}
-              title="View College Knowledge Base Documents"
-            >
-              <div className="sidebar-bottom-left">
-                <div className="sidebar-bottom-icon">
-                  <BookOpen size={17} strokeWidth={1.9} />
+            {/* Knowledge Base Row (Admin Only) */}
+            {currentUser?.role === 'admin' && (
+              <div
+                className="sidebar-bottom-card"
+                onClick={() => handleNavClick('documents')}
+                title="View College Knowledge Base Documents"
+              >
+                <div className="sidebar-bottom-left">
+                  <div className="sidebar-bottom-icon">
+                    <BookOpen size={17} strokeWidth={1.9} />
+                  </div>
+                  <div className="sidebar-bottom-meta">
+                    <span className="bottom-meta-title">Knowledge Base</span>
+                    <span className="bottom-meta-subtitle">Documents • Drive • Departments</span>
+                  </div>
                 </div>
-                <div className="sidebar-bottom-meta">
-                  <span className="bottom-meta-title">Knowledge Base</span>
-                  <span className="bottom-meta-subtitle">Documents • Drive • Departments</span>
-                </div>
+                <ChevronRight size={15} className="bottom-chevron" />
               </div>
-              <ChevronRight size={15} className="bottom-chevron" />
-            </div>
+            )}
 
             {/* User Profile / Auth Row */}
             {currentUser ? (

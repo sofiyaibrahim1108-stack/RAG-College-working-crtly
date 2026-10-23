@@ -1,0 +1,68 @@
+[
+  {
+    "_id": "6ac5973b01ab2b6475a092f1",
+    "name": "course",
+    "code": "1",
+    "description": "",
+    "aliases": [],
+    "documentCount": 5,
+    "createdAt": "2026-10-07T00:50:03.691Z",
+    "updatedAt": "2026-10-13T08:17:40.702Z",
+    "__v": 0
+  },
+  {
+    "_id": "6ac5a1a9cd803c8273f18816",
+    "name": "external",
+    "code": "C2",
+    "description": "",
+    "aliases": [],
+    "documentCount": 3,
+    "createdAt": "2026-10-07T01:34:33.294Z",
+    "updatedAt": "2026-10-15T12:00:46.103Z",
+    "__v": 0
+  },
+  {
+    "_id": "6ac5d5fc24b56cf8f9cb42d9",
+    "name": "college information",
+    "code": "C3",
+    "description": "",
+    "aliases": [],
+    "documentCount": 2,
+    "createdAt": "2026-10-07T05:17:48.705Z",
+    "updatedAt": "2026-10-23T06:00:21.843Z",
+    "__v": 0
+  },
+  {
+    "_id": "6ac60028c00a524719bf77aa",
+    "name": "Student info",
+    "code": "C5",
+    "description": "",
+    "aliases": [],
+    "documentCount": 2,
+    "createdAt": "2026-10-07T08:17:44.969Z",
+    "updatedAt": "2026-10-13T08:09:05.105Z",
+    "__v": 0
+  },
+  {
+    "_id": "6ad9e6bd674198d0295cb8de",
+    "name": "IT",
+    "code": "C6",
+    "description": "",
+    "aliases": [],
+    "documentCount": 2,
+    "createdAt": "2026-10-22T10:34:37.777Z",
+    "updatedAt": "2026-10-23T06:00:21.824Z",
+    "__v": 0
+  },
+  {
+    "_id": "6ad9e6d0674198d0295cb8df",
+    "name": "Zoology",
+    "code": "Z1",
+    "description": "",
+    "aliases": [],
+    "documentCount": 1,
+    "createdAt": "2026-10-22T10:34:56.217Z",
+    "updatedAt": "2026-10-22T11:40:25.297Z",
+    "__v": 0
+  }
+]

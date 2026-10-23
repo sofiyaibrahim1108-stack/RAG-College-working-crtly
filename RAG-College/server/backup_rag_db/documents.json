@@ -1,0 +1,518 @@
+[
+  {
+    "_id": "6accffe968703b54d8a99fe6",
+    "originalFilename": "react_nodejs_integration_guide.pdf",
+    "fileType": "pdf",
+    "fileSize": 45520,
+    "storagePath": "D:\\Office Project\\RAG-College\\server\\uploads\\react_nodejs_integration_guide-1791819753282-43096238.pdf",
+    "source": "upload",
+    "driveFileId": null,
+    "driveMetadata": {
+      "webViewLink": null,
+      "mimeType": null,
+      "modifiedTime": null,
+      "exportMimeType": null
+    },
+    "departmentIds": [
+      "6ac5973b01ab2b6475a092f1"
+    ],
+    "status": "completed",
+    "processingError": null,
+    "totalChunks": 75,
+    "metadata": {
+      "pageCount": 29,
+      "slideCount": 0,
+      "sheetNames": [],
+      "rowCount": 0,
+      "author": null
+    },
+    "createdAt": "2026-10-12T15:42:33.319Z",
+    "updatedAt": "2026-10-12T15:42:55.951Z",
+    "__v": 0
+  },
+  {
+    "_id": "6acde696b7dd39e7f4385266",
+    "originalFilename": "LRG_College_Profile.docx",
+    "fileType": "docx",
+    "fileSize": 230774,
+    "storagePath": "D:\\Office Project\\RAG-College\\server\\uploads\\LRG_College_Profile-1791878806579-238185509.docx",
+    "source": "upload",
+    "driveFileId": null,
+    "driveMetadata": {
+      "webViewLink": null,
+      "mimeType": null,
+      "modifiedTime": null,
+      "exportMimeType": null
+    },
+    "departmentIds": [
+      "6ac5d5fc24b56cf8f9cb42d9"
+    ],
+    "status": "completed",
+    "processingError": null,
+    "totalChunks": 26,
+    "metadata": {
+      "pageCount": 5,
+      "slideCount": 0,
+      "sheetNames": [],
+      "rowCount": 0,
+      "author": null
+    },
+    "createdAt": "2026-10-13T08:06:46.608Z",
+    "updatedAt": "2026-10-13T08:07:18.775Z",
+    "__v": 0
+  },
+  {
+    "_id": "6acde6cfb7dd39e7f4385285",
+    "originalFilename": "XYZ_College_Information_Handbook.pdf",
+    "fileType": "pdf",
+    "fileSize": 54133,
+    "storagePath": "D:\\Office Project\\RAG-College\\server\\uploads\\XYZ_College_Information_Handbook-1791878863810-783501250.pdf",
+    "source": "upload",
+    "driveFileId": null,
+    "driveMetadata": {
+      "webViewLink": null,
+      "mimeType": null,
+      "modifiedTime": null,
+      "exportMimeType": null
+    },
+    "departmentIds": [
+      "6ac5d5fc24b56cf8f9cb42d9"
+    ],
+    "status": "completed",
+    "processingError": null,
+    "totalChunks": 62,
+    "metadata": {
+      "pageCount": 24,
+      "slideCount": 0,
+      "sheetNames": [],
+      "rowCount": 0,
+      "author": null
+    },
+    "createdAt": "2026-10-13T08:07:43.817Z",
+    "updatedAt": "2026-10-13T08:08:01.861Z",
+    "__v": 0
+  },
+  {
+    "_id": "6acde6fdb7dd39e7f43852c5",
+    "originalFilename": "Park College Intern.xlsx",
+    "fileType": "xlsx",
+    "fileSize": 9164,
+    "storagePath": "D:\\Office Project\\RAG-College\\server\\data\\uploads\\drive_177nY3Kn5ZRpQtUgaaRNyTya5RPqbj99RgupmsU3CzRI_1791878908392_Park_College_Intern.xlsx",
+    "source": "google_drive",
+    "driveFileId": "177nY3Kn5ZRpQtUgaaRNyTya5RPqbj99RgupmsU3CzRI",
+    "driveMetadata": {
+      "webViewLink": "https://docs.google.com/spreadsheets/d/177nY3Kn5ZRpQtUgaaRNyTya5RPqbj99RgupmsU3CzRI/edit?usp=drivesdk",
+      "mimeType": "application/vnd.google-apps.spreadsheet",
+      "modifiedTime": "2026-09-07T06:47:50.024Z",
+      "exportMimeType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    },
+    "departmentIds": [
+      "6ac60028c00a524719bf77aa"
+    ],
+    "status": "completed",
+    "processingError": null,
+    "totalChunks": 5,
+    "metadata": {
+      "pageCount": 3,
+      "slideCount": 0,
+      "sheetNames": [
+        "Sheet1",
+        "Sheet3",
+        "Sheet2"
+      ],
+      "rowCount": 43,
+      "author": null
+    },
+    "createdAt": "2026-10-13T08:08:29.899Z",
+    "updatedAt": "2026-10-13T08:08:34.807Z",
+    "__v": 0
+  },
+  {
+    "_id": "6acde71db7dd39e7f43852cb",
+    "originalFilename": "student_marks_dataset.csv",
+    "fileType": "csv",
+    "fileSize": 1441,
+    "storagePath": "D:\\Office Project\\RAG-College\\server\\uploads\\student_marks_dataset-1791878941729-905016283.csv",
+    "source": "upload",
+    "driveFileId": null,
+    "driveMetadata": {
+      "webViewLink": null,
+      "mimeType": null,
+      "modifiedTime": null,
+      "exportMimeType": null
+    },
+    "departmentIds": [
+      "6ac60028c00a524719bf77aa"
+    ],
+    "status": "completed",
+    "processingError": null,
+    "totalChunks": 3,
+    "metadata": {
+      "pageCount": 1,
+      "slideCount": 0,
+      "sheetNames": [
+        "Sheet1"
+      ],
+      "rowCount": 31,
+      "author": null
+    },
+    "createdAt": "2026-10-13T08:09:01.737Z",
+    "updatedAt": "2026-10-13T08:09:05.095Z",
+    "__v": 0
+  },
+  {
+    "_id": "6acde745b7dd39e7f43852cf",
+    "originalFilename": "JavaScript_Complete_Guide.pdf",
+    "fileType": "pdf",
+    "fileSize": 45151,
+    "storagePath": "D:\\Office Project\\RAG-College\\server\\uploads\\JavaScript_Complete_Guide-1791878981968-820893252.pdf",
+    "source": "upload",
+    "driveFileId": null,
+    "driveMetadata": {
+      "webViewLink": null,
+      "mimeType": null,
+      "modifiedTime": null,
+      "exportMimeType": null
+    },
+    "departmentIds": [
+      "6ac5973b01ab2b6475a092f1"
+    ],
+    "status": "completed",
+    "processingError": null,
+    "totalChunks": 49,
+    "metadata": {
+      "pageCount": 25,
+      "slideCount": 0,
+      "sheetNames": [],
+      "rowCount": 0,
+      "author": null
+    },
+    "createdAt": "2026-10-13T08:09:41.978Z",
+    "updatedAt": "2026-10-13T08:09:59.272Z",
+    "__v": 0
+  },
+  {
+    "_id": "6acde777b7dd39e7f4385301",
+    "originalFilename": "Python_Presentation.pptx",
+    "fileType": "pptx",
+    "fileSize": 185697,
+    "storagePath": "D:\\Office Project\\RAG-College\\server\\uploads\\Python_Presentation-1791879031018-432223720.pptx",
+    "source": "upload",
+    "driveFileId": null,
+    "driveMetadata": {
+      "webViewLink": null,
+      "mimeType": null,
+      "modifiedTime": null,
+      "exportMimeType": null
+    },
+    "departmentIds": [
+      "6ac5973b01ab2b6475a092f1"
+    ],
+    "status": "completed",
+    "processingError": null,
+    "totalChunks": 95,
+    "metadata": {
+      "pageCount": 96,
+      "slideCount": 96,
+      "sheetNames": [],
+      "rowCount": 0,
+      "author": null
+    },
+    "createdAt": "2026-10-13T08:10:31.030Z",
+    "updatedAt": "2026-10-13T08:10:49.890Z",
+    "__v": 0
+  },
+  {
+    "_id": "6acde7a0b7dd39e7f4385361",
+    "originalFilename": "employee_records_3_sheets (2).xlsx",
+    "fileType": "xlsx",
+    "fileSize": 11645,
+    "storagePath": "D:\\Office Project\\RAG-College\\server\\uploads\\employee_records_3_sheets__2_-1791879072961-218314832.xlsx",
+    "source": "upload",
+    "driveFileId": null,
+    "driveMetadata": {
+      "webViewLink": null,
+      "mimeType": null,
+      "modifiedTime": null,
+      "exportMimeType": null
+    },
+    "departmentIds": [
+      "6ac5a1a9cd803c8273f18816"
+    ],
+    "status": "completed",
+    "processingError": null,
+    "totalChunks": 7,
+    "metadata": {
+      "pageCount": 3,
+      "slideCount": 0,
+      "sheetNames": [
+        "Employee Records",
+        "Department Summary",
+        "Attendance"
+      ],
+      "rowCount": 49,
+      "author": null
+    },
+    "createdAt": "2026-10-13T08:11:12.969Z",
+    "updatedAt": "2026-10-13T08:11:19.112Z",
+    "__v": 0
+  },
+  {
+    "_id": "6acde7c1b7dd39e7f4385369",
+    "originalFilename": "FINAL DOCUMENT-AI product Design Generator Last (7).pdf",
+    "fileType": "pdf",
+    "fileSize": 1974459,
+    "storagePath": "D:\\Office Project\\RAG-College\\server\\uploads\\FINAL_DOCUMENT-AI_product_Design_Generator_Last__7_-1791879104973-618096802.pdf",
+    "source": "upload",
+    "driveFileId": null,
+    "driveMetadata": {
+      "webViewLink": null,
+      "mimeType": null,
+      "modifiedTime": null,
+      "exportMimeType": null
+    },
+    "departmentIds": [
+      "6ac5973b01ab2b6475a092f1"
+    ],
+    "status": "completed",
+    "processingError": null,
+    "totalChunks": 158,
+    "metadata": {
+      "pageCount": 68,
+      "slideCount": 0,
+      "sheetNames": [],
+      "rowCount": 0,
+      "author": null
+    },
+    "createdAt": "2026-10-13T08:11:45.001Z",
+    "updatedAt": "2026-10-13T08:14:06.022Z",
+    "__v": 0
+  },
+  {
+    "_id": "6acde872b7dd39e7f438541a",
+    "originalFilename": "product_catalog_test.csv",
+    "fileType": "csv",
+    "fileSize": 467,
+    "storagePath": "D:\\Office Project\\RAG-College\\server\\uploads\\product_catalog_test-1791879282376-539561527.csv",
+    "source": "upload",
+    "driveFileId": null,
+    "driveMetadata": {
+      "webViewLink": null,
+      "mimeType": null,
+      "modifiedTime": null,
+      "exportMimeType": null
+    },
+    "departmentIds": [
+      "6ac5a1a9cd803c8273f18816"
+    ],
+    "status": "completed",
+    "processingError": null,
+    "totalChunks": 1,
+    "metadata": {
+      "pageCount": 1,
+      "slideCount": 0,
+      "sheetNames": [
+        "Sheet1"
+      ],
+      "rowCount": 13,
+      "author": null
+    },
+    "createdAt": "2026-10-13T08:14:42.388Z",
+    "updatedAt": "2026-10-13T08:14:44.038Z",
+    "__v": 0
+  },
+  {
+    "_id": "6acde89bb7dd39e7f438541c",
+    "originalFilename": "R_Programming_and_Data_Analytics_Notes.docx",
+    "fileType": "docx",
+    "fileSize": 126263,
+    "storagePath": "D:\\Office Project\\RAG-College\\server\\uploads\\R_Programming_and_Data_Analytics_Notes-1791879323652-171199590.docx",
+    "source": "upload",
+    "driveFileId": null,
+    "driveMetadata": {
+      "webViewLink": null,
+      "mimeType": null,
+      "modifiedTime": null,
+      "exportMimeType": null
+    },
+    "departmentIds": [
+      "6ac5973b01ab2b6475a092f1"
+    ],
+    "status": "completed",
+    "processingError": null,
+    "totalChunks": 343,
+    "metadata": {
+      "pageCount": 60,
+      "slideCount": 0,
+      "sheetNames": [],
+      "rowCount": 0,
+      "author": null
+    },
+    "createdAt": "2026-10-13T08:15:23.663Z",
+    "updatedAt": "2026-10-13T08:17:40.693Z",
+    "__v": 0
+  },
+  {
+    "_id": "6ad0bf0cc5e9a668002543ef",
+    "originalFilename": "Eye disease.pdf",
+    "fileType": "pdf",
+    "fileSize": 1530736,
+    "storagePath": "D:\\Office Project\\RAG-College\\server\\data\\uploads\\drive_1irQcAtMITedRrs4oBQ0iGKuRs0Dt3SuX_1792065289399_Eye_disease.pdf",
+    "source": "google_drive",
+    "driveFileId": "1irQcAtMITedRrs4oBQ0iGKuRs0Dt3SuX",
+    "driveMetadata": {
+      "webViewLink": "https://drive.google.com/file/d/1irQcAtMITedRrs4oBQ0iGKuRs0Dt3SuX/view?usp=drivesdk",
+      "mimeType": "application/pdf",
+      "modifiedTime": "2026-08-08T05:52:57.000Z",
+      "exportMimeType": null
+    },
+    "departmentIds": [
+      "6ac5a1a9cd803c8273f18816"
+    ],
+    "status": "completed",
+    "processingError": null,
+    "totalChunks": 163,
+    "metadata": {
+      "pageCount": 64,
+      "slideCount": 0,
+      "sheetNames": [],
+      "rowCount": 0,
+      "author": null
+    },
+    "createdAt": "2026-10-15T11:54:52.151Z",
+    "updatedAt": "2026-10-15T12:00:46.090Z",
+    "__v": 0
+  },
+  {
+    "_id": "6ad9e726674198d0295cb8e0",
+    "originalFilename": "Python Tkinter.docx",
+    "fileType": "docx",
+    "fileSize": 352519,
+    "storagePath": "D:\\Office Project\\RAG-College\\server\\uploads\\Python_Tkinter-1792665382685-258276370.docx",
+    "source": "upload",
+    "driveFileId": null,
+    "driveMetadata": {
+      "webViewLink": null,
+      "mimeType": null,
+      "modifiedTime": null,
+      "exportMimeType": null
+    },
+    "departmentIds": [
+      "6ad9e6bd674198d0295cb8de"
+    ],
+    "fileHash": "ec67470d3bcbaf657c7de537e5de9fd67e3b145b5da2ef3deb1df0704cc0e727",
+    "category": "Syllabus",
+    "visibility": "department",
+    "ownerId": "6ad9dc5ad4ae5f700dabe7b8",
+    "uploadedByList": [
+      "6ad9dc5ad4ae5f700dabe7b8"
+    ],
+    "version": 1,
+    "isLatest": true,
+    "isArchived": false,
+    "status": "completed",
+    "approvedBy": "6ad9dc5ad4ae5f700dabe7b8",
+    "approvedAt": "2026-10-22T10:36:38.163Z",
+    "rejectionReason": null,
+    "processingError": null,
+    "totalChunks": 92,
+    "metadata": {
+      "pageCount": 18,
+      "slideCount": 0,
+      "sheetNames": [],
+      "rowCount": 0,
+      "author": null
+    },
+    "createdAt": "2026-10-22T10:36:22.751Z",
+    "updatedAt": "2026-10-22T10:39:58.553Z",
+    "__v": 0
+  },
+  {
+    "_id": "6ad9f5b4a723e113bf13e33f",
+    "originalFilename": "bsc_zoology_2023_24.pdf",
+    "fileType": "pdf",
+    "fileSize": 224044,
+    "storagePath": "D:\\Office Project\\RAG-College\\server\\uploads\\bsc_zoology_2023_24-1792669108365-597908184.pdf",
+    "source": "upload",
+    "driveFileId": null,
+    "driveMetadata": {
+      "webViewLink": null,
+      "mimeType": null,
+      "modifiedTime": null,
+      "exportMimeType": null
+    },
+    "departmentIds": [
+      "6ad9e6d0674198d0295cb8df"
+    ],
+    "fileHash": "cdcc6d6aefbd56f0bbc99abab48e907366aafbc8ae0bd9a668b66ddbb80b5a43",
+    "category": "General",
+    "visibility": "department",
+    "ownerId": "6ad9dc5ad4ae5f700dabe7b8",
+    "uploadedByList": [
+      "6ad9dc5ad4ae5f700dabe7b8"
+    ],
+    "version": 1,
+    "isLatest": true,
+    "isArchived": false,
+    "status": "completed",
+    "approvedBy": "6ad9dc5ad4ae5f700dabe7b8",
+    "approvedAt": "2026-10-22T11:39:40.023Z",
+    "rejectionReason": null,
+    "processingError": null,
+    "totalChunks": 9,
+    "metadata": {
+      "pageCount": 2,
+      "slideCount": 0,
+      "sheetNames": [],
+      "rowCount": 0,
+      "author": null
+    },
+    "createdAt": "2026-10-22T11:38:28.409Z",
+    "updatedAt": "2026-10-22T11:40:25.265Z",
+    "__v": 0
+  },
+  {
+    "_id": "6ad9faefa723e113bf13e353",
+    "originalFilename": "html and css.pdf",
+    "fileType": "pdf",
+    "fileSize": 227537,
+    "storagePath": "D:\\Office Project\\RAG-College\\server\\uploads\\html_and_css-1792670447710-127797617.pdf",
+    "source": "upload",
+    "driveFileId": null,
+    "driveMetadata": {
+      "webViewLink": null,
+      "mimeType": null,
+      "modifiedTime": null,
+      "exportMimeType": null
+    },
+    "departmentIds": [
+      "6ad9e6bd674198d0295cb8de"
+    ],
+    "fileHash": "c610f9f1ab3d62c8a5e9ef5cd6f88dde0c0ee74c018bb918e4d60be22694c909",
+    "category": "Notes",
+    "visibility": "department",
+    "ownerId": "6ad9dc5ad4ae5f700dabe7b8",
+    "uploadedByList": [
+      "6ad9dc5ad4ae5f700dabe7b8"
+    ],
+    "version": 1,
+    "isLatest": true,
+    "isArchived": false,
+    "status": "completed",
+    "approvedBy": "6ad9dc5ad4ae5f700dabe7b8",
+    "approvedAt": "2026-10-22T12:01:28.932Z",
+    "rejectionReason": null,
+    "processingError": null,
+    "totalChunks": 25,
+    "metadata": {
+      "pageCount": 25,
+      "slideCount": 0,
+      "sheetNames": [],
+      "rowCount": 0,
+      "author": null
+    },
+    "createdAt": "2026-10-22T12:00:47.758Z",
+    "updatedAt": "2026-10-22T12:06:00.950Z",
+    "__v": 0
+  }
+]

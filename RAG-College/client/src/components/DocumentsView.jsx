@@ -38,14 +38,18 @@ export default function DocumentsView({
 
   // Department name resolver
   const getDeptNames = (deptIds) => {
-    if (!deptIds || deptIds.length === 0) return 'General';
-    return deptIds
-      .map((id) => {
-        const d = departments.find((dept) => dept._id === id);
-        return d ? d.code : null;
+    if (!deptIds || !Array.isArray(deptIds) || deptIds.length === 0) return 'General';
+    const names = deptIds
+      .map((dept) => {
+        if (typeof dept === 'object' && dept !== null && (dept.code || dept.name)) {
+          return dept.code || dept.name;
+        }
+        const resolved = departments.find((d) => String(d._id) === String(dept));
+        return resolved ? resolved.code || resolved.name : null;
       })
-      .filter(Boolean)
-      .join(', ') || 'General';
+      .filter(Boolean);
+
+    return names.length > 0 ? names.join(', ') : 'General';
   };
 
   // Format file size
@@ -67,13 +71,26 @@ export default function DocumentsView({
     return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
   };
 
+  // Extract file extension reliably
+  const extractExt = (doc) => {
+    if (doc?.fileType && typeof doc.fileType === 'string' && !doc.fileType.includes('/')) {
+      return doc.fileType.replace('.', '').toLowerCase().trim();
+    }
+    const name = doc?.filename || doc?.originalFilename || doc?.originalName || '';
+    const parts = name.split('.');
+    if (parts.length > 1) {
+      return parts.pop().toLowerCase().trim();
+    }
+    return 'file';
+  };
+
   // Get appropriate icon for file extension
   const getDocTypeIcon = (ext) => {
     const e = (ext || '').toLowerCase();
-    if (e === 'xlsx' || e === 'xls' || e === 'csv') {
+    if (['xlsx', 'xls', 'csv'].includes(e)) {
       return <FileSpreadsheet size={20} className="doc-icon-spreadsheet" />;
     }
-    if (e === 'json' || e === 'txt') {
+    if (['json', 'txt'].includes(e)) {
       return <FileCode size={20} className="doc-icon-code" />;
     }
     if (e === 'pdf') {
@@ -101,7 +118,6 @@ export default function DocumentsView({
         }
       }
     } else if (onOpenReupload) {
-      // Reuse the upload modal so department selection stays required
       onOpenReupload(doc);
     } else {
       targetReuploadDocRef.current = doc;
@@ -126,35 +142,43 @@ export default function DocumentsView({
     }
   };
 
-  // Helper to reliably resolve status across models and API formats
+  // Status Normalizer: handles 'ready', 'completed', 'failed', 'error', 'processing', etc.
   const resolveDocStatus = (doc) => {
-    const raw = (doc?.status || doc?.processingStatus || 'pending').toLowerCase();
-    if (raw === 'completed' || raw === 'ready') return 'ready';
-    if (raw === 'failed') return 'failed';
+    const raw = String(doc?.status || doc?.processingStatus || 'pending').toLowerCase().trim();
+    if (['completed', 'ready', 'success', 'done'].includes(raw)) return 'ready';
+    if (['failed', 'error'].includes(raw)) return 'failed';
     return 'processing';
   };
 
-  // Processing state detection for dynamic loading UI
+  // Processing state detection
   const processingDocs = documents.filter((d) => resolveDocStatus(d) === 'processing' || reuploadingDocId === d._id);
   const hasProcessingDocs = processingDocs.length > 0;
   const hasLargeProcessingDoc = processingDocs.some(isLargeDoc);
 
-  // Filtering
+  // Complete Matching Logic for all 4 filters
   const filteredDocs = documents.filter((doc) => {
-    const filename = (doc.filename || doc.originalFilename || doc.originalName || '').toLowerCase();
-    const matchesSearch = !search || filename.includes(search.toLowerCase());
+    const displayName = doc.filename || doc.originalFilename || doc.originalName || '';
+    const matchesSearch = !search.trim() || displayName.toLowerCase().includes(search.trim().toLowerCase());
 
+    // 1. Department matching
     const matchesDept =
       !selectedDeptId ||
-      (doc.departmentIds && doc.departmentIds.includes(selectedDeptId));
+      (Array.isArray(doc.departmentIds) &&
+        doc.departmentIds.some((dept) => {
+          const id = typeof dept === 'object' && dept !== null ? dept._id || dept.id : dept;
+          return String(id) === String(selectedDeptId);
+        }));
 
+    // 2. Status matching
+    const docStatus = resolveDocStatus(doc);
     const matchesStatus =
       !selectedStatus ||
-      resolveDocStatus(doc) === selectedStatus.toLowerCase();
+      docStatus === selectedStatus.toLowerCase().trim();
 
-    const matchesType =
-      !selectedFileType ||
-      (doc.fileType || '').toLowerCase() === selectedFileType.toLowerCase();
+    // 3. File type matching
+    const docExt = extractExt(doc);
+    const targetType = selectedFileType.toLowerCase().replace('.', '').trim();
+    const matchesType = !targetType || docExt === targetType;
 
     return matchesSearch && matchesDept && matchesStatus && matchesType;
   });
@@ -207,7 +231,7 @@ export default function DocumentsView({
         </div>
       </div>
 
-      {/* Knowledge Base Dynamic Loading Status Banner */}
+      {/* Dynamic Processing Status Banner */}
       {hasProcessingDocs && (
         <div className="upload-progress-container kb-processing-banner">
           <div className="upload-progress-header">
@@ -240,7 +264,7 @@ export default function DocumentsView({
           />
         </div>
 
-        {/* Department Filter */}
+        {/* 1. Department Filter */}
         <select
           className="filter-select"
           value={selectedDeptId}
@@ -255,7 +279,7 @@ export default function DocumentsView({
           ))}
         </select>
 
-        {/* File Type Filter */}
+        {/* 2. File Type Filter */}
         <select
           className="filter-select"
           value={selectedFileType}
@@ -273,7 +297,7 @@ export default function DocumentsView({
           <option value="pptx">PPTX</option>
         </select>
 
-        {/* Status Filter */}
+        {/* 3. Status Filter */}
         <select
           className="filter-select"
           value={selectedStatus}
@@ -287,7 +311,7 @@ export default function DocumentsView({
         </select>
       </div>
 
-      {/* Document Cards Grid / Empty State */}
+      {/* Document Grid / Empty State */}
       {isLoading ? (
         <div className="empty-placeholder">
           <Clock size={28} className="spin icon-brand-wine" />
@@ -326,13 +350,13 @@ export default function DocumentsView({
         <div className="empty-placeholder">
           <Search size={32} className="search-icon-muted" />
           <div className="empty-title">No matching documents</div>
-          <div className="empty-subtext">Try changing your search term or department filter.</div>
+          <div className="empty-subtext">Try changing your search term, file type, or status filter.</div>
         </div>
       ) : (
         <div className="doc-cards-grid">
           {filteredDocs.map((doc) => {
             const displayName = doc.filename || doc.originalFilename || doc.originalName || 'Untitled Document';
-            const ext = doc.fileType || displayName.split('.').pop() || 'FILE';
+            const ext = extractExt(doc);
             const status = resolveDocStatus(doc);
             const isDrive = doc.source === 'google_drive';
             const deptText = getDeptNames(doc.departmentIds);
@@ -341,7 +365,6 @@ export default function DocumentsView({
 
             return (
               <div key={doc._id} className="doc-card">
-                {/* Top Section: Icon, Name & Drive Badge */}
                 <div className="doc-card-header">
                   <div className="doc-card-icon-wrap">
                     {getDocTypeIcon(ext)}
@@ -373,7 +396,6 @@ export default function DocumentsView({
                   )}
                 </div>
 
-                {/* Status & Upload Date Row */}
                 <div className="doc-card-status-row">
                   <span
                     className={`status-pill ${status}`}
@@ -390,7 +412,6 @@ export default function DocumentsView({
                   </span>
                 </div>
 
-                {/* Card-level Dynamic Loading Status */}
                 {(status === 'processing' || isReuploading) && (
                   <div className="doc-card-processing-status">
                     <Loader2 size={13} className="spin upload-spinner" style={{ color: 'var(--primary)', flexShrink: 0 }} />
@@ -408,7 +429,6 @@ export default function DocumentsView({
                   </div>
                 )}
 
-                {/* Bottom Actions Row: [Re-upload] [Delete] (Admin only) */}
                 {isAdmin && (
                   <div className="doc-card-actions">
                     <button

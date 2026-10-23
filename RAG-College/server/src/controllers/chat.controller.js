@@ -4,8 +4,7 @@ const Message = require('../models/Message');
 const { compiledRagGraph, filterSupportingSources } = require('../services/langgraph/workflow');
 const { PipelineTimer } = require('../utils/timer');
 
-// Opens a Server-Sent Events response. Every write is guarded, so a client that
-// refreshed or disconnected never crashes the request (the answer is still saved in MongoDB).
+// Opens a Server-Sent Events response.
 function openEventStream(res) {
   res.status(200);
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
@@ -19,7 +18,6 @@ function openEventStream(res) {
   const send = (event, data) => {
     if (!isOpen()) return;
     res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
-    // Needed when a compression middleware buffers the response
     if (typeof res.flush === 'function') res.flush();
   };
 
@@ -31,7 +29,6 @@ function openEventStream(res) {
 }
 
 // POST /api/chat - Main RAG chat endpoint
-// Streams (SSE) when the client sends { stream: true } or Accept: text/event-stream, plain JSON otherwise.
 exports.sendMessage = async (req, res) => {
   let stream = null;
 
@@ -56,15 +53,32 @@ exports.sendMessage = async (req, res) => {
       stream = openEventStream(res);
     }
 
-    // 1. Find or create Conversation session
+    const currentUserId = req.user ? (req.user._id || req.user.id) : null;
+    const currentUserObjectId = currentUserId && mongoose.Types.ObjectId.isValid(currentUserId)
+      ? new mongoose.Types.ObjectId(currentUserId)
+      : null;
+
+    // 1. Session check: if this session is already owned by another user or lacks an owner, isolate it cleanly
     let conversation = await Conversation.findOne({ sessionId });
-    if (!conversation) {
+    
+    const isOwnedByOther = conversation && conversation.userId && currentUserObjectId &&
+      String(conversation.userId) !== String(currentUserObjectId);
+
+    if (!conversation || isOwnedByOther) {
+      const targetSessionId = isOwnedByOther
+        ? `session-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`
+        : sessionId;
+
       conversation = await Conversation.create({
-        sessionId,
+        sessionId: targetSessionId,
+        userId: currentUserObjectId || undefined,
         title: message.trim().slice(0, 40),
         departmentContext: departmentIds
       });
     } else {
+      if (!conversation.userId && currentUserObjectId) {
+        conversation.userId = currentUserObjectId;
+      }
       conversation.updatedAt = new Date();
       await conversation.save();
     }
@@ -91,7 +105,7 @@ exports.sendMessage = async (req, res) => {
     const startTime = Date.now();
     const graphInput = {
       question: message.trim(),
-      sessionId,
+      sessionId: conversation.sessionId,
       selectedDepartments: departmentIds,
       documentId,
       messages: conversationHistory,
@@ -107,7 +121,7 @@ exports.sendMessage = async (req, res) => {
       graphInput.visualMode = null;
     }
 
-    // 5. Invoke LangGraph (token callbacks are only attached when streaming)
+    // 5. Invoke LangGraph
     const graphConfig = {
       configurable: {
         onToken: stream ? (text) => stream.send('token', { text }) : null,
@@ -161,7 +175,7 @@ exports.sendMessage = async (req, res) => {
       similarityScore: img.similarityScore
     }));
 
-    // 6. DB SAVE IS PROTECTED: Always executes even if client refreshed during generation
+    // 6. Save Assistant Message in MongoDB
     const assistantMessage = await Message.create({
       conversationId: conversation._id,
       role: 'assistant',
@@ -183,11 +197,12 @@ exports.sendMessage = async (req, res) => {
       suggestedQuestions: finalState.suggestedQuestions || [],
       timings: { ...(finalState.timings || {}), pipelineMs: totalPipelineMs },
       conversationId: conversation._id,
+      sessionId: conversation.sessionId,
       userMessageId: userMessage._id,
       assistantMessageId: assistantMessage._id
     };
 
-    // 7. Final result: streamed clients get a closing "done" event, others get plain JSON
+    // 7. Deliver result
     if (stream) {
       stream.send('done', payload);
       stream.end();
@@ -224,6 +239,16 @@ exports.getHistory = async (req, res) => {
       return res.status(200).json({ success: true, count: 0, data: [] });
     }
 
+    const currentUserId = req.user ? (req.user._id || req.user.id) : null;
+    if (
+      req.user &&
+      req.user.role !== 'admin' &&
+      conversation.userId &&
+      String(conversation.userId) !== String(currentUserId)
+    ) {
+      return res.status(403).json({ success: false, message: 'Access denied to this conversation history' });
+    }
+
     const messages = await Message.find({ conversationId: conversation._id })
       .sort({ createdAt: 1 })
       .limit(50);
@@ -243,9 +268,28 @@ exports.getHistory = async (req, res) => {
 // GET /api/chat/conversations
 exports.listConversations = async (req, res) => {
   try {
-    const conversations = await Conversation.find().sort({ updatedAt: -1 }).limit(20);
+    const filter = {};
+    const currentUserId = req.user ? (req.user._id || req.user.id) : null;
+
+    if (req.user && req.user.role !== 'admin') {
+      if (currentUserId) {
+        const userObjId = mongoose.Types.ObjectId.isValid(currentUserId)
+          ? new mongoose.Types.ObjectId(currentUserId)
+          : null;
+
+        filter.$or = [
+          { userId: String(currentUserId) },
+          ...(userObjId ? [{ userId: userObjId }] : [])
+        ];
+      } else {
+        return res.status(200).json({ success: true, count: 0, data: [] });
+      }
+    }
+
+    const conversations = await Conversation.find(filter).sort({ updatedAt: -1 }).limit(30);
     return res.status(200).json({ success: true, count: conversations.length, data: conversations });
   } catch (error) {
+    console.error('[ChatController] Error listing conversations:', error);
     return res.status(500).json({ success: false, message: error.message });
   }
 };
@@ -257,6 +301,16 @@ exports.deleteConversation = async (req, res) => {
     const conversation = await Conversation.findOne({ sessionId });
     if (!conversation) {
       return res.status(200).json({ success: true, message: 'Conversation not found or already deleted' });
+    }
+
+    const currentUserId = req.user ? (req.user._id || req.user.id) : null;
+    if (
+      req.user &&
+      req.user.role !== 'admin' &&
+      conversation.userId &&
+      String(conversation.userId) !== String(currentUserId)
+    ) {
+      return res.status(403).json({ success: false, message: 'Access denied: cannot delete this conversation' });
     }
 
     const msgResult = await Message.deleteMany({ conversationId: conversation._id });
@@ -280,6 +334,16 @@ exports.truncateHistoryFrom = async (req, res) => {
     const conversation = await Conversation.findOne({ sessionId });
     if (!conversation) {
       return res.status(404).json({ success: false, message: 'Conversation not found' });
+    }
+
+    const currentUserId = req.user ? (req.user._id || req.user.id) : null;
+    if (
+      req.user &&
+      req.user.role !== 'admin' &&
+      conversation.userId &&
+      String(conversation.userId) !== String(currentUserId)
+    ) {
+      return res.status(403).json({ success: false, message: 'Access denied: cannot modify this conversation' });
     }
 
     let targetMsg = null;

@@ -161,7 +161,12 @@ export async function uploadDocuments(formData) {
     body: formData
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(data.message || 'Upload failed');
+  if (!res.ok) {
+    const error = new Error(data.message || 'Upload failed');
+    error.response = { status: res.status, data };
+    error.status = res.status;
+    throw error;
+  }
   return data;
 }
 
@@ -411,6 +416,7 @@ export async function importDriveFile({ fileId, departmentIds, forceReimport = f
     const err = new Error(data.message || 'Failed to import document from Google Drive');
     err.duplicate = data.duplicate;
     err.data = data.data;
+    err.response = { status: res.status, data };
     throw err;
   }
   return data;

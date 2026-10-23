@@ -41,7 +41,6 @@ export default function UploadModal({
     onClose();
   };
 
-  // Reset / prefill when the modal opens (re-upload prefills the document's departments)
   useEffect(() => {
     if (isOpen) {
       setStagedFiles([]);
@@ -90,7 +89,6 @@ export default function UploadModal({
     });
 
     if (newValidFiles.length > 0) {
-      // Re-upload replaces with exactly one file
       const nextFiles = isReupload ? [newValidFiles[0]] : [...stagedFiles, ...newValidFiles];
       setStagedFiles(nextFiles);
       setIsLargeFile(nextFiles.some((f) => f.size > LARGE_FILE_THRESHOLD));
@@ -146,7 +144,6 @@ export default function UploadModal({
         onToast(`Uploaded ${stagedFiles.length} ${stagedFiles.length === 1 ? 'document' : 'documents'} successfully!`, 'success');
       }
 
-      // Reset state and close
       setStagedFiles([]);
       setIsLargeFile(false);
       setSelectedDeptIds([]);
@@ -154,7 +151,8 @@ export default function UploadModal({
       onClose();
     } catch (err) {
       console.error('Upload failed:', err);
-      setErrorMsg(getFriendlyErrorMessage(err, 'upload'));
+      const serverMessage = err.response?.data?.message || err.message;
+      setErrorMsg(serverMessage || getFriendlyErrorMessage(err, 'upload'));
       setIsLargeFile(false);
     } finally {
       setIsUploading(false);
@@ -170,7 +168,6 @@ export default function UploadModal({
         aria-modal="true"
         aria-labelledby="upload-modal-title"
       >
-        {/* Modal Header */}
         <div className="modal-header-row">
           <div className="modal-header-text">
             <h2 id="upload-modal-title" className="modal-header-title">
@@ -193,9 +190,7 @@ export default function UploadModal({
           </button>
         </div>
 
-        {/* Modal Body */}
         <div className="modal-content-body upload-modal-body">
-          {/* 1. Department Selection (AT THE TOP) */}
           <MultiSelectDropdown
             ref={deptDropdownRef}
             label="Department"
@@ -211,7 +206,6 @@ export default function UploadModal({
             id="upload-dept-select"
           />
 
-          {/* 2. Upload Dropzone */}
           <div
             className={`upload-dropzone ${isDragging ? 'dragging' : ''}`}
             onDragOver={(e) => {
@@ -271,7 +265,6 @@ export default function UploadModal({
             </div>
           </div>
 
-          {/* 3. Staged Files List */}
           {stagedFiles.length > 0 && (
             <div className="upload-selected-section">
               <div className="upload-selected-title">
@@ -314,7 +307,6 @@ export default function UploadModal({
             </div>
           )}
 
-          {/* 4. Upload Progress / Loading */}
           {isUploading && (
             <div className="upload-progress-container">
               <div className="upload-progress-header">
@@ -331,26 +323,26 @@ export default function UploadModal({
             </div>
           )}
 
-          {/* 5. General Error Message */}
           {errorMsg && (
             <div style={{
               display: 'flex',
               alignItems: 'center',
               gap: '10px',
-              padding: '10px 14px',
+              padding: '12px 14px',
               background: '#FEF2F2',
               border: '1px solid #FEE2E2',
               borderRadius: '8px',
               color: 'var(--danger)',
-              fontSize: '13px'
+              fontSize: '13px',
+              lineHeight: 1.4,
+              marginTop: '12px'
             }}>
-              <AlertCircle size={16} style={{ flexShrink: 0 }} />
+              <AlertCircle size={18} style={{ flexShrink: 0 }} />
               <span>{errorMsg}</span>
             </div>
           )}
         </div>
 
-        {/* Modal Footer */}
         <div className="modal-footer-row">
           <button
             type="button"

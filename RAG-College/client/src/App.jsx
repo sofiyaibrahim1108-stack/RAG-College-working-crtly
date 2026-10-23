@@ -264,14 +264,13 @@ export default function App() {
   const [isUsersLoading, setIsUsersLoading] = useState(false);
   const [isAnswerStreaming, setIsAnswerStreaming] = useState(false);
 
+  // Auth & Session
+  const [currentUser, setCurrentUser] = useState(null);
+  const [isAuthChecking, setIsAuthChecking] = useState(true);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+
   // Active Chat State
-  const [activeConvId, setActiveConvId] = useState(() => {
-    try {
-      return localStorage.getItem('rag_last_active_conv') || 'session-default';
-    } catch {
-      return 'session-default';
-    }
-  });
+  const [activeConvId, setActiveConvId] = useState('session-default');
   const [messages, setMessages] = useState([]);
   const [inputQuery, setInputQuery] = useState('');
   const [editingMessage, setEditingMessage] = useState(null);
@@ -308,14 +307,18 @@ export default function App() {
   const pollingTimerRef = useRef(null);
   const isPollingRef = useRef(false);
 
+  // Sync activeConvId per logged-in user in localStorage
   useEffect(() => {
     activeConvIdRef.current = activeConvId;
-    try {
-      localStorage.setItem('rag_last_active_conv', activeConvId);
-    } catch {
-      // ignore
+    if (currentUser) {
+      const uId = currentUser._id || currentUser.id || 'default';
+      try {
+        localStorage.setItem(`rag_last_active_conv_${uId}`, activeConvId);
+      } catch {
+        // ignore
+      }
     }
-  }, [activeConvId]);
+  }, [activeConvId, currentUser]);
 
   const [progressSteps, setProgressSteps] = useState(DEFAULT_PROGRESS_STEPS);
 
@@ -361,11 +364,6 @@ export default function App() {
 
   const [toasts, setToasts] = useState([]);
 
-  // Auth & Session
-  const [currentUser, setCurrentUser] = useState(null);
-  const [isAuthChecking, setIsAuthChecking] = useState(true);
-  const [showAuthModal, setShowAuthModal] = useState(false);
-
   useEffect(() => {
     let isMounted = true;
     async function restoreSession() {
@@ -388,12 +386,32 @@ export default function App() {
     };
   }, []);
 
+  // RBAC Guard: Non-admin users are strictly kept on chat
+  useEffect(() => {
+    if (currentUser && currentUser.role !== 'admin' && activeView !== 'chat') {
+      setActiveView('chat');
+    }
+  }, [currentUser, activeView]);
+
   const handleLogin = async (credentials) => {
+    setConversations([]);
+    setMessages([]);
     const data = await loginUser(credentials);
     const user = await fetchCurrentUser();
-    setCurrentUser(user || data.user);
+    const activeUser = user || data.user;
+    setCurrentUser(activeUser);
+
+    const uId = activeUser?._id || activeUser?.id || 'default';
+    const freshSessionId = `session-${Date.now()}`;
+    setActiveConvId(freshSessionId);
+    try {
+      localStorage.setItem(`rag_last_active_conv_${uId}`, freshSessionId);
+    } catch (e) {
+      // ignore
+    }
+
     setActiveView('chat');
-    addToast(`Signed in as ${user?.name || data.user?.name || 'User'}`, 'success');
+    addToast(`Signed in as ${activeUser?.name || 'User'}`, 'success');
   };
 
   const handleRegister = async (payload) => {
@@ -404,11 +422,20 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    if (currentUser) {
+      const uId = currentUser._id || currentUser.id || 'default';
+      try {
+        localStorage.removeItem(`rag_last_active_conv_${uId}`);
+      } catch (e) {
+        // ignore
+      }
+    }
     logoutUser();
     setCurrentUser(null);
     setConversations([]);
     setMessages([]);
     setUsersList([]);
+    setActiveConvId(`session-${Date.now()}`);
     addToast('Signed out successfully', 'info');
   };
 
@@ -568,6 +595,9 @@ export default function App() {
       setDepartments(deptsData.data || []);
       setDocuments(docsData.data || []);
 
+      const uId = currentUser?._id || currentUser?.id || 'default';
+      const savedActive = localStorage.getItem(`rag_last_active_conv_${uId}`);
+
       if (convsData.data && convsData.data.length > 0) {
         const loadedConvs = convsData.data.map((c) => ({
           id: c.sessionId,
@@ -575,28 +605,15 @@ export default function App() {
           updatedAt: c.updatedAt || c.createdAt
         }));
 
-        if (isSendingRef.current) {
-          setConversations((prev) => {
-            const currentActive = prev.find((c) => c.id === activeConvId);
-            const exists = loadedConvs.some((c) => c.id === activeConvId);
-            if (currentActive && !exists) {
-              return [currentActive, ...loadedConvs];
-            }
-            return loadedConvs;
-          });
+        setConversations(loadedConvs);
+        if (savedActive && loadedConvs.some((c) => c.id === savedActive)) {
+          setActiveConvId(savedActive);
         } else {
-          setConversations(loadedConvs);
-          const savedActive = localStorage.getItem('rag_last_active_conv');
-          if (savedActive && loadedConvs.some((c) => c.id === savedActive)) {
-            setActiveConvId(savedActive);
-          } else {
-            setActiveConvId(convsData.data[0].sessionId);
-          }
+          setActiveConvId(convsData.data[0].sessionId);
         }
       } else {
-        if (!isSendingRef.current) {
-          setConversations([]);
-        }
+        setConversations([]);
+        setActiveConvId(savedActive || `session-${Date.now()}`);
       }
     } catch (err) {
       console.error('Error loading initial data:', err);
@@ -675,6 +692,7 @@ export default function App() {
         stopRecoveryPolling();
         setIsSending(false);
         isSendingRef.current = false;
+        setIsAnswerStreaming(false);
         setUnresolvedStatus({
           type: 'unknown',
           question: pendingQuestion,
@@ -697,6 +715,7 @@ export default function App() {
           setMessages(dbMsgs);
           setIsSending(false);
           isSendingRef.current = false;
+          setIsAnswerStreaming(false);
           setUnresolvedStatus(null);
           setShowRetryConfirm(false);
         } else {
@@ -825,6 +844,7 @@ export default function App() {
             clearPendingQuery(currentSessionId);
             setIsSending(false);
             isSendingRef.current = false;
+            setIsAnswerStreaming(false);
             setUnresolvedStatus(null);
           } else {
             const userMsgInDb = dbMsgs.find(
@@ -900,6 +920,7 @@ export default function App() {
     stopRecoveryPolling();
     isSendingRef.current = false;
     setIsSending(false);
+    setIsAnswerStreaming(false);
     setEditingMessage(null);
     setInputQuery('');
     setUnresolvedStatus(null);
@@ -957,6 +978,7 @@ export default function App() {
     stopRecoveryPolling();
     isSendingRef.current = false;
     setIsSending(false);
+    setIsAnswerStreaming(false);
     setRegeneratingId(null);
     setUnresolvedStatus(null);
     setShowRetryConfirm(false);
@@ -1124,6 +1146,7 @@ export default function App() {
           if (!isCurrentRequest()) return;
           if (!firstTokenSeen) {
             firstTokenSeen = true;
+            setIsAnswerStreaming(true);
             clearStepperTimers();
           }
           writer.push(chunk);
@@ -1137,7 +1160,12 @@ export default function App() {
       clearPendingQuery(requestSessionId);
 
       if (activeRequestIdRef.current !== currentRequestId) return;
-      if (activeConvIdRef.current !== requestSessionId) return;
+
+      // Update sessionId if server assigned an isolated session
+      const returnedSessionId = res.sessionId || res.data?.sessionId;
+      if (returnedSessionId && returnedSessionId !== requestSessionId) {
+        setActiveConvId(returnedSessionId);
+      }
 
       clearStepperTimers();
 
@@ -1170,6 +1198,21 @@ export default function App() {
           ? prev.map((m) => (m.id === streamMsgId ? assistantMsg : m))
           : [...prev, assistantMsg]
       );
+
+      // Re-fetch conversation list to persist the generated title in the sidebar
+      try {
+        const convsRes = await fetchConversations();
+        if (convsRes.data && Array.isArray(convsRes.data)) {
+          const freshList = convsRes.data.map((c) => ({
+            id: c.sessionId,
+            title: c.title || 'Untitled Conversation',
+            updatedAt: c.updatedAt || c.createdAt
+          }));
+          setConversations(freshList);
+        }
+      } catch (convFetchErr) {
+        console.warn('Could not refresh conversations list:', convFetchErr);
+      }
     } catch (err) {
       writer.cancel();
       clearPendingQuery(requestSessionId);
@@ -1196,6 +1239,7 @@ export default function App() {
         abortControllerRef.current = null;
         isSendingRef.current = false;
         setIsSending(false);
+        setIsAnswerStreaming(false);
       }
     }
   };
@@ -1325,6 +1369,7 @@ export default function App() {
           if (!isCurrentRequest()) return;
           if (!firstTokenSeen) {
             firstTokenSeen = true;
+            setIsAnswerStreaming(true);
             clearStepperTimers();
           }
           writer.push(chunk);
@@ -1391,6 +1436,7 @@ export default function App() {
         setRegeneratingId(null);
         isSendingRef.current = false;
         setIsSending(false);
+        setIsAnswerStreaming(false);
       }
     }
   };
@@ -1409,7 +1455,7 @@ export default function App() {
       setDepartments(deptsData.data || []);
     } catch (err) {
       console.error('Error uploading docs:', err);
-      addToast(getFriendlyErrorMessage(err, 'upload'), 'error');
+      throw err;
     } finally {
       setIsDocsLoading(false);
     }
@@ -1452,7 +1498,6 @@ export default function App() {
         setDepartments(deptsData.data || []);
       } catch (err) {
         console.error('Re-upload failed:', err);
-        addToast(getFriendlyErrorMessage(err, 'upload'), 'error');
         throw err;
       }
     }
@@ -1646,8 +1691,8 @@ export default function App() {
                       setInputQuery={setInputQuery}
                       onSendMessage={() => handleSendMessage()}
                       onStopGeneration={handleStopGeneration}
-                      onOpenUpload={handleOpenUpload}
-                      onOpenDrive={handleOpenDrive}
+                      onOpenUpload={currentUser?.role === 'admin' ? handleOpenUpload : undefined}
+                      onOpenDrive={currentUser?.role === 'admin' ? handleOpenDrive : undefined}
                       isSending={isSending}
                       selectedDepartmentName={activeDeptName}
                       visualMode={visualMode}
@@ -1685,7 +1730,7 @@ export default function App() {
                       ))}
 
                       {/* Sending / Processing indicator with Horizontal Stepper */}
-                      {isSending && !regeneratingId && !isAnswerStreaming && (
+                      {isSending && !regeneratingId && !isAnswerStreaming && !messages.some((m) => m.isStreaming) && (
                         <div className="message-row assistant">
                           <div
                             className="message-bubble assistant"
@@ -1840,8 +1885,8 @@ export default function App() {
                       setInputQuery={setInputQuery}
                       onSendMessage={() => handleSendMessage()}
                       onStopGeneration={handleStopGeneration}
-                      onOpenUpload={handleOpenUpload}
-                      onOpenDrive={handleOpenDrive}
+                      onOpenUpload={currentUser?.role === 'admin' ? handleOpenUpload : undefined}
+                      onOpenDrive={currentUser?.role === 'admin' ? handleOpenDrive : undefined}
                       isSending={isSending}
                       selectedDepartmentName={activeDeptName}
                       visualMode={visualMode}
@@ -1856,7 +1901,7 @@ export default function App() {
           </div>
         )}
 
-        {activeView === 'documents' && (
+        {activeView === 'documents' && currentUser?.role === 'admin' && (
           <DocumentsView
             documents={documents}
             departments={departments}
@@ -1877,7 +1922,7 @@ export default function App() {
           />
         )}
 
-        {activeView === 'departments' && (
+        {activeView === 'departments' && currentUser?.role === 'admin' && (
           <DepartmentsView
             departments={departments}
             documents={documents}

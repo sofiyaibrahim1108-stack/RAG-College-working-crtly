@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const mongoose = require('mongoose');
 const Document = require('../models/Document');
 const Department = require('../models/Department');
@@ -10,7 +11,18 @@ const imageVectorService = require('../services/image-vector.service');
 const { removeExtractedImages } = require('../services/image-extractor.service');
 const { processDocumentsBatch } = require('../services/processor.service');
 
-// POST /api/documents/upload - Multi-file upload with department assignments (Non-blocking with timing)
+// Helper to compute SHA-256 hash from file on disk
+function computeFileHash(filePath) {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash('sha256');
+    const stream = fs.createReadStream(filePath);
+    stream.on('data', (chunk) => hash.update(chunk));
+    stream.on('end', () => resolve(hash.digest('hex')));
+    stream.on('error', (err) => reject(err));
+  });
+}
+
+// POST /api/documents/upload - Multi-file upload with SHA-256 duplicate detection & version control
 exports.uploadDocuments = async (req, res) => {
   try {
     if (!req.files || req.files.length === 0) {
@@ -59,15 +71,52 @@ exports.uploadDocuments = async (req, res) => {
       });
     }
 
-    // Create Document records in MongoDB
-    const createdDocs = [];
+    // 1. SHA-256 Hash Duplicate Validation
+    const preparedFiles = [];
     for (const file of req.files) {
+      const fileHash = await computeFileHash(file.path);
+
+      // Check if exact same file hash exists anywhere in the database
+      const existingDuplicate = await Document.findOne({ fileHash });
+      if (existingDuplicate) {
+        // Clean up all staged upload files on disk
+        req.files.forEach((f) => {
+          if (fs.existsSync(f.path)) fs.unlinkSync(f.path);
+        });
+
+        return res.status(409).json({
+          success: false,
+          message: `Duplicate file detected! This exact file already exists as "${existingDuplicate.originalFilename}" (Version ${existingDuplicate.version || 1}).`
+        });
+      }
+
+      // Check version increment for same filename with new content
+      const previousVersionDoc = await Document.findOne({
+        originalFilename: file.originalname
+      }).sort({ version: -1 });
+
+      const nextVersion = previousVersionDoc ? (previousVersionDoc.version || 1) + 1 : 1;
+
+      preparedFiles.push({
+        file,
+        fileHash,
+        version: nextVersion
+      });
+    }
+
+    // 2. Create Document records in MongoDB
+    const createdDocs = [];
+    for (const item of preparedFiles) {
+      const { file, fileHash, version } = item;
       const ext = path.extname(file.originalname).toLowerCase().replace('.', '');
+
       const doc = await Document.create({
         originalFilename: file.originalname,
         fileType: ext,
         fileSize: file.size,
         storagePath: file.path,
+        fileHash,
+        version,
         source: 'upload',
         departmentIds: validDepts,
         status: 'processing'
@@ -83,15 +132,15 @@ exports.uploadDocuments = async (req, res) => {
       await Department.findByIdAndUpdate(dId, { documentCount: count });
     }
 
-    // 1. Send immediate response to frontend so UI does NOT freeze
+    // 3. Send immediate response to frontend so UI does NOT freeze
     res.status(202).json({
       success: true,
-      message: `Uploaded ${createdDocs.length} file(s). Ingestion is running in the background.`,
+      message: `Uploaded ${createdDocs.length} file(s). Ingestion running in background.`,
       count: createdDocs.length,
       data: createdDocs
     });
 
-    // 2. Run ingestion pipeline asynchronously in the background with precise timing log
+    // 4. Run ingestion pipeline asynchronously in the background
     setImmediate(async () => {
       const ingestStart = Date.now();
       try {
@@ -117,6 +166,12 @@ exports.uploadDocuments = async (req, res) => {
     });
   } catch (error) {
     console.error('Error during uploadDocuments:', error);
+    // Cleanup files if unexpected runtime error occurs
+    if (req.files) {
+      req.files.forEach((f) => {
+        if (fs.existsSync(f.path)) fs.unlinkSync(f.path);
+      });
+    }
     return res.status(500).json({
       success: false,
       message: error.message || 'File upload failed'
@@ -139,7 +194,7 @@ exports.getDocuments = async (req, res) => {
     }
 
     if (search) {
-      query.originalFilename = { $regex: search,$options: 'i' };
+      query.originalFilename = { $regex: search, $options: 'i' };
     }
 
     const documents = await Document.find(query)
