@@ -13,6 +13,7 @@ const imageRoutes = require('./routes/image.routes');
 const driveRoutes = require('./routes/drive.routes');
 const authRoutes = require('./routes/auth.routes');
 const userRoutes = require('./routes/user.routes');
+const auditRoutes = require('./routes/audit.routes');
 const Image = require('./models/Image');
 
 const app = express();
@@ -25,15 +26,28 @@ app.use((req, res, next) => {
   next();
 });
 
-// Middlewares
+// CORS Configuration
 app.use(
   cors({
     origin: CLIENT_URL || 'http://localhost:5173',
     credentials: true
   })
 );
+
+// Body Parsers
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Gracefully catch malformed JSON payloads (prevents SyntaxError 400 crashes in terminal/logs)
+app.use((err, req, res, next) => {
+  if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid or malformed JSON payload received'
+    });
+  }
+  next(err);
+});
 
 // Lightweight request logging
 app.use((req, res, next) => {
@@ -56,6 +70,7 @@ app.use('/api/images', imageRoutes);
 app.use('/api/drive', driveRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/audit-logs', auditRoutes);
 
 // Direct route handler for frontend image streaming fallback (e.g. GET /:id/file)
 app.get('/:id/file', async (req, res) => {

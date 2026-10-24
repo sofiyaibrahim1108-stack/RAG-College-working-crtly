@@ -1,12 +1,15 @@
 const jwt = require('jsonwebtoken');
+const { JWT_SECRET } = require('../config/env');
+const User = require('../models/User');
 
-// Token verification
-exports.protect = (req, res, next) => {
+const protect = async (req, res, next) => {
   let token;
-  const authHeader = req.headers.authorization;
 
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    token = authHeader.split(' ')[1];
+  if (
+    req.headers.authorization &&
+    req.headers.authorization.startsWith('Bearer')
+  ) {
+    token = req.headers.authorization.split(' ')[1];
   }
 
   if (!token) {
@@ -17,7 +20,7 @@ exports.protect = (req, res, next) => {
   }
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback_secret');
+    const decoded = jwt.verify(token, JWT_SECRET || 'fallback_secret');
     req.user = decoded;
     next();
   } catch (err) {
@@ -28,20 +31,16 @@ exports.protect = (req, res, next) => {
   }
 };
 
-// Role-based authorization (e.g., authorize('admin'))
-exports.authorize = (...roles) => {
+const authorize = (...roles) => {
   return (req, res, next) => {
     if (!req.user || !roles.includes(req.user.role)) {
       return res.status(403).json({
         success: false,
-        message: 'Permission denied. You do not have access to this action.'
+        message: 'Forbidden. Insufficient permissions.'
       });
     }
     next();
   };
 };
 
-// Aliases for compatibility
-exports.verifyToken = exports.protect;
-exports.requireAdmin = exports.authorize('admin');
-exports.requireStaff = exports.authorize('admin', 'staff', 'user');
+module.exports = { protect, authorize };

@@ -24,6 +24,7 @@ export function setAuthToken(token) {
 export function removeAuthToken() {
   try {
     localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem('token');
   } catch {
     // ignore
   }
@@ -73,7 +74,6 @@ export async function fetchCurrentUser() {
     });
 
     if (res.status === 401 || res.status === 403) {
-      removeAuthToken();
       return null;
     }
 
@@ -196,7 +196,6 @@ export function mapVisualModeToPayload(visualMode) {
   return null;
 }
 
-// Phase 3 Chat API (non-streaming, kept for compatibility)
 export async function sendChatMessage({
   message,
   sessionId,
@@ -222,7 +221,6 @@ export async function sendChatMessage({
   return data;
 }
 
-// Streaming Chat API (Server-Sent Events over fetch)
 export async function sendChatMessageStream({
   message,
   sessionId,
@@ -234,6 +232,11 @@ export async function sendChatMessageStream({
   onReset = null,
   signal = undefined
 }) {
+  const token = getAuthToken();
+  if (!token) {
+    throw new Error('Access denied. No token provided.');
+  }
+
   const res = await fetch(`${API_BASE}/chat`, {
     method: 'POST',
     headers: getAuthHeaders({
@@ -257,9 +260,7 @@ export async function sendChatMessageStream({
     try {
       const data = await res.json();
       errorMessage = data.message || errorMessage;
-    } catch (_) {
-      // response was not JSON
-    }
+    } catch (_) {}
     throw new Error(errorMessage);
   }
 
@@ -328,17 +329,40 @@ export async function sendChatMessageStream({
 }
 
 export async function fetchChatHistory(sessionId) {
+  const token = getAuthToken();
+  if (!token) {
+    return { success: true, data: [] };
+  }
+
   const res = await fetch(`${API_BASE}/chat/history/${sessionId}`, {
     headers: getAuthHeaders()
   });
-  if (!res.ok) throw new Error('Failed to fetch chat history');
-  return res.json();
+
+  if (res.status === 401) {
+    return { success: false, data: [] };
+  }
+
+  if (!res.ok) {
+    throw new Error('Failed to fetch chat history');
+  }
+
+  return await res.json();
 }
 
 export async function fetchConversations() {
+  const token = getAuthToken();
+  if (!token) {
+    return { success: true, data: [] };
+  }
+
   const res = await fetch(`${API_BASE}/chat/conversations`, {
     headers: getAuthHeaders()
   });
+
+  if (res.status === 401) {
+    return { success: false, data: [] };
+  }
+
   if (!res.ok) throw new Error('Failed to fetch conversations');
   return res.json();
 }
@@ -363,7 +387,6 @@ export async function truncateChatHistory(sessionId, messageId) {
   return data;
 }
 
-// Phase 5 Google Drive APIs
 export async function fetchDriveStatus() {
   const res = await fetch(`${API_BASE}/drive/status`, {
     headers: getAuthHeaders()
@@ -422,7 +445,6 @@ export async function importDriveFile({ fileId, departmentIds, forceReimport = f
   return data;
 }
 
-// User Management APIs (Admin Only)
 export async function fetchUsers() {
   const res = await fetch(`${API_BASE}/users`, {
     headers: getAuthHeaders()
@@ -468,6 +490,27 @@ export async function deleteUserRecord(id) {
   const data = await res.json();
   if (!res.ok) {
     throw new Error(data.message || 'Failed to delete user');
+  }
+  return data;
+}
+
+export async function getAuditLogs(params = {}) {
+  const searchParams = new URLSearchParams();
+  Object.entries(params).forEach(([key, val]) => {
+    if (val !== undefined && val !== null && val !== '') {
+      searchParams.append(key, val);
+    }
+  });
+  const query = searchParams.toString();
+  const res = await fetch(`${API_BASE}/audit-logs${query ? `?${query}` : ''}`, {
+    headers: getAuthHeaders()
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    const error = new Error(data.message || 'Failed to fetch audit logs');
+    error.response = { status: res.status, data };
+    error.status = res.status;
+    throw error;
   }
   return data;
 }

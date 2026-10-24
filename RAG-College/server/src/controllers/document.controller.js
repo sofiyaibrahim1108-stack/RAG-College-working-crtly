@@ -10,6 +10,7 @@ const vectorService = require('../services/vector.service');
 const imageVectorService = require('../services/image-vector.service');
 const { removeExtractedImages } = require('../services/image-extractor.service');
 const { processDocumentsBatch } = require('../services/processor.service');
+const { logAction } = require('../services/audit.service');
 
 // Helper to compute SHA-256 hash from file on disk
 function computeFileHash(filePath) {
@@ -22,7 +23,7 @@ function computeFileHash(filePath) {
   });
 }
 
-// POST /api/documents/upload - Multi-file upload with SHA-256 duplicate detection & version control
+// POST /api/documents/upload - Multi-file upload with duplicate skipping, versioning & audit logging
 exports.uploadDocuments = async (req, res) => {
   try {
     if (!req.files || req.files.length === 0) {
@@ -32,7 +33,7 @@ exports.uploadDocuments = async (req, res) => {
       });
     }
 
-    // Parse departmentIds (can be JSON array, comma separated, or single string)
+    // Parse departmentIds (JSON array string, comma-separated, or single ID)
     let departmentIds = req.body.departmentIds;
     if (typeof departmentIds === 'string') {
       try {
@@ -52,7 +53,7 @@ exports.uploadDocuments = async (req, res) => {
       });
     }
 
-    // Validate that all departmentIds are valid ObjectIds
+    // Validate that departmentIds exist in the database
     const validDepts = [];
     for (const dId of departmentIds) {
       if (mongoose.Types.ObjectId.isValid(dId)) {
@@ -71,26 +72,25 @@ exports.uploadDocuments = async (req, res) => {
       });
     }
 
-    // 1. SHA-256 Hash Duplicate Validation
+    // 1. SHA-256 Hash Duplicate Validation (Skips duplicates without aborting the batch)
     const preparedFiles = [];
+    const skippedDuplicates = [];
+
     for (const file of req.files) {
       const fileHash = await computeFileHash(file.path);
 
-      // Check if exact same file hash exists anywhere in the database
+      // Check if identical hash already exists in the system
       const existingDuplicate = await Document.findOne({ fileHash });
       if (existingDuplicate) {
-        // Clean up all staged upload files on disk
-        req.files.forEach((f) => {
-          if (fs.existsSync(f.path)) fs.unlinkSync(f.path);
+        if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+        skippedDuplicates.push({
+          filename: file.originalname,
+          existingName: existingDuplicate.originalFilename
         });
-
-        return res.status(409).json({
-          success: false,
-          message: `Duplicate file detected! This exact file already exists as "${existingDuplicate.originalFilename}" (Version ${existingDuplicate.version || 1}).`
-        });
+        continue;
       }
 
-      // Check version increment for same filename with new content
+      // Check version increment for same filename with updated content
       const previousVersionDoc = await Document.findOne({
         originalFilename: file.originalname
       }).sort({ version: -1 });
@@ -101,6 +101,14 @@ exports.uploadDocuments = async (req, res) => {
         file,
         fileHash,
         version: nextVersion
+      });
+    }
+
+    // If every uploaded file in the batch was a duplicate
+    if (preparedFiles.length === 0) {
+      return res.status(409).json({
+        success: false,
+        message: `All uploaded files already exist in the knowledge base! (${skippedDuplicates.map((d) => d.filename).join(', ')})`
       });
     }
 
@@ -132,21 +140,40 @@ exports.uploadDocuments = async (req, res) => {
       await Department.findByIdAndUpdate(dId, { documentCount: count });
     }
 
-    // 3. Send immediate response to frontend so UI does NOT freeze
+    // 3. Record Audit Log for Document Upload
+    logAction({
+      req,
+      action: 'DOCUMENT_UPLOAD',
+      resourceType: 'Document',
+      details: {
+        count: createdDocs.length,
+        filenames: createdDocs.map((d) => d.originalFilename),
+        skippedDuplicatesCount: skippedDuplicates.length,
+        skippedFiles: skippedDuplicates.map((d) => d.filename),
+        departmentIds: validDepts
+      }
+    });
+
+    // 4. Send immediate response so frontend UI never blocks
+    const skippedNote = skippedDuplicates.length > 0
+      ? ` (${skippedDuplicates.length} duplicate file(s) skipped)`
+      : '';
+
     res.status(202).json({
       success: true,
-      message: `Uploaded ${createdDocs.length} file(s). Ingestion running in background.`,
+      message: `Uploaded ${createdDocs.length} file(s)${skippedNote}. Ingestion is running in the background.`,
       count: createdDocs.length,
       data: createdDocs
     });
 
-    // 4. Run ingestion pipeline asynchronously in the background
+    // 5. Run ingestion pipeline sequentially (concurrency: 1) to prevent vector lock collisions
     setImmediate(async () => {
       const ingestStart = Date.now();
       try {
         console.log(`\n[Ingestion] >>> Started background ingestion for ${docIds.length} file(s)...`);
 
-        await processDocumentsBatch(docIds, 2);
+        // Concurrency 1 ensures stable local vector index writing without collision
+        await processDocumentsBatch(docIds, 1);
 
         const ingestDuration = Date.now() - ingestStart;
         console.log('\n================ [INGESTION COMPLETED] ================');
@@ -155,7 +182,7 @@ exports.uploadDocuments = async (req, res) => {
         console.log(`Average Per File  : ${(ingestDuration / docIds.length / 1000).toFixed(2)}s`);
         console.log('=======================================================\n');
 
-        // Re-sync department document counts after completion
+        // Re-sync department document counts after ingestion completes
         for (const dId of validDepts) {
           const count = await Document.countDocuments({ departmentIds: dId });
           await Department.findByIdAndUpdate(dId, { documentCount: count });
@@ -166,7 +193,6 @@ exports.uploadDocuments = async (req, res) => {
     });
   } catch (error) {
     console.error('Error during uploadDocuments:', error);
-    // Cleanup files if unexpected runtime error occurs
     if (req.files) {
       req.files.forEach((f) => {
         if (fs.existsSync(f.path)) fs.unlinkSync(f.path);
@@ -346,6 +372,18 @@ exports.deleteDocument = async (req, res) => {
         await Department.findByIdAndUpdate(dId, { documentCount: count });
       }
     }
+
+    // 5. Record Audit Log for Document Deletion
+    logAction({
+      req,
+      action: 'DOCUMENT_DELETE',
+      resourceType: 'Document',
+      resourceId: id,
+      details: {
+        deletedFilename: doc.originalFilename,
+        departmentIds: deptIds
+      }
+    });
 
     return res.status(200).json({
       success: true,

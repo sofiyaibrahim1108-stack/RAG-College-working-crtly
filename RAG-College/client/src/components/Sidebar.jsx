@@ -20,6 +20,7 @@ import {
   LogOut,
   LogIn,
   Users,
+  ShieldAlert
 } from 'lucide-react';
 
 function formatRelativeTime(dateString) {
@@ -401,7 +402,20 @@ export default function Sidebar({
             </button>
           )}
 
-          {/* 6. Settings */}
+          {/* 6. Audit Logs (Admin Only) */}
+          {currentUser?.role === 'admin' && (
+            <button
+              type="button"
+              className={`sidebar-nav-item ${activeView === 'audit-logs' ? 'active' : ''}`}
+              title="Security & Audit Logs"
+              onClick={() => handleNavClick('audit-logs')}
+            >
+              <ShieldAlert size={17} strokeWidth={1.9} />
+              {!isCollapsed && <span>Audit Logs</span>}
+            </button>
+          )}
+
+          {/* 7. Settings */}
           <button
             type="button"
             className="sidebar-nav-item"

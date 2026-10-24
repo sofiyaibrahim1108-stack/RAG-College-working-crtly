@@ -8,5 +8,6 @@ router.post('/', protect, chatController.sendMessage);
 router.get('/conversations', protect, chatController.listConversations);
 router.get('/history/:sessionId', protect, chatController.getHistory);
 router.delete('/conversations/:sessionId', protect, chatController.deleteConversation);
+router.delete('/history/:sessionId/from/:messageId', protect, chatController.truncateHistoryFrom);
 
 module.exports = router;

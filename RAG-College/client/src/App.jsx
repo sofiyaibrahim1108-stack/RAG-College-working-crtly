@@ -18,6 +18,7 @@ import {
   registerUser,
   fetchCurrentUser,
   logoutUser,
+  setAuthToken,
   removeAuthToken,
   fetchUsers,
   createUserRecord,
@@ -35,6 +36,7 @@ import ChatComposer from './components/ChatComposer';
 import DocumentsView from './components/DocumentsView';
 import DepartmentsView from './components/DepartmentsView';
 import UsersView from './components/UsersView';
+import AuditLogsView from './components/AuditLogsView';
 import UploadModal from './components/UploadModal';
 import DepartmentModal from './components/DepartmentModal';
 import ConfirmModal from './components/ConfirmModal';
@@ -162,7 +164,7 @@ export default function App() {
     try {
       const params = new URLSearchParams(window.location.search);
       const viewParam = params.get('view');
-      if (['documents', 'departments', 'chat', 'users'].includes(viewParam)) {
+      if (['documents', 'departments', 'chat', 'users', 'audit-logs'].includes(viewParam)) {
         return viewParam;
       }
     } catch {
@@ -397,8 +399,14 @@ export default function App() {
     setConversations([]);
     setMessages([]);
     const data = await loginUser(credentials);
-    const user = await fetchCurrentUser();
-    const activeUser = user || data.user;
+    
+    // Explicitly persist token returned by the login endpoint
+    if (data.token) {
+      setAuthToken(data.token);
+    }
+    
+    // Use user details returned directly from the response
+    const activeUser = data.user;
     setCurrentUser(activeUser);
 
     const uId = activeUser?._id || activeUser?.id || 'default';
@@ -791,7 +799,7 @@ export default function App() {
     setVisualMode(null);
     visualModeRef.current = null;
 
-    if (!activeConvId) return;
+    if (!currentUser || !activeConvId) return;
 
     let isCurrentSession = true;
     const currentSessionId = activeConvId;
@@ -909,7 +917,7 @@ export default function App() {
       isCurrentSession = false;
       stopRecoveryPolling();
     };
-  }, [activeConvId]);
+  }, [activeConvId, currentUser]);
 
   const handleNewChat = () => {
     activeRequestIdRef.current++;
@@ -1674,7 +1682,9 @@ export default function App() {
                 ? 'Departments'
                 : activeView === 'users'
                   ? 'User Management'
-                  : null
+                  : activeView === 'audit-logs'
+                    ? 'Security & Audit Logs'
+                    : null
           }
         />
 
@@ -1946,9 +1956,14 @@ export default function App() {
             currentUser={currentUser}
           />
         )}
+
+        {/* 4. Admin-Only Security & Audit Logs View */}
+        {activeView === 'audit-logs' && currentUser?.role === 'admin' && (
+          <AuditLogsView />
+        )}
       </main>
 
-      {/* 4. Modals */}
+      {/* 5. Modals */}
       <AuthModal
         isOpen={showAuthModal}
         onClose={() => setShowAuthModal(false)}
@@ -2013,7 +2028,7 @@ export default function App() {
         hasActiveMessages={messages.length > 0}
       />
 
-      {/* 5. Toasts */}
+      {/* 6. Toasts */}
       <Toast toasts={toasts} onDismiss={removeToast} />
     </div>
   );
