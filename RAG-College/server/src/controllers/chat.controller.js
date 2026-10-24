@@ -3,6 +3,7 @@ const Conversation = require('../models/Conversation');
 const Message = require('../models/Message');
 const { compiledRagGraph, filterSupportingSources } = require('../services/langgraph/workflow');
 const { PipelineTimer } = require('../utils/timer');
+const Feedback = require('../models/Feedback');
 
 // Opens a Server-Sent Events response.
 function openEventStream(res) {
@@ -58,7 +59,7 @@ exports.sendMessage = async (req, res) => {
       ? new mongoose.Types.ObjectId(currentUserId)
       : null;
 
-    // 1. Session check: if this session is already owned by another user or lacks an owner, isolate it cleanly
+    // 1. Session check: isolate cleanly if session is owned by another user or lacks an owner
     let conversation = await Conversation.findOne({ sessionId });
     
     const isOwnedByOther = conversation && conversation.userId && currentUserObjectId &&
@@ -354,7 +355,7 @@ exports.truncateHistoryFrom = async (req, res) => {
     if (targetMsg) {
       const result = await Message.deleteMany({
         conversationId: conversation._id,
-        $or: [{ _id: targetMsg._id }, { createdAt: { $gte: targetMsg.createdAt } }]
+        $or: [{ _id: targetMsg._id }, { createdAt: {$gte: targetMsg.createdAt } }]
       });
       return res.status(200).json({
         success: true,
@@ -366,6 +367,124 @@ exports.truncateHistoryFrom = async (req, res) => {
     return res.status(200).json({ success: true, message: 'Message not found in DB', deletedCount: 0 });
   } catch (error) {
     console.error('[ChatController] Error truncating history:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// POST /api/chat/feedback - Record user thumbs up / down
+exports.submitFeedback = async (req, res) => {
+  try {
+    const {
+      messageId,
+      sessionId,
+      rating,
+      reason = '',
+      feedbackText = '',
+      answer = '',
+      response: rawResponse = '',
+      query = ''
+    } = req.body;
+
+    if (!rating || !['like', 'dislike', 'up', 'down'].includes(rating)) {
+      return res.status(400).json({ success: false, message: 'Valid rating is required' });
+    }
+
+    const normalizedRating = (rating === 'like' || rating === 'up') ? 'up' : 'down';
+
+    let targetMessage = null;
+    if (messageId && mongoose.Types.ObjectId.isValid(String(messageId))) {
+      targetMessage = await Message.findById(messageId);
+    }
+
+    let currentUserId = req.user ? (req.user._id || req.user.id) : null;
+    let userEmail = req.user ? req.user.email : 'anonymous';
+
+    if (!currentUserId && req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+      try {
+        const jwt = require('jsonwebtoken');
+        const token = req.headers.authorization.split(' ')[1];
+        const decoded = jwt.decode(token);
+        if (decoded) {
+          currentUserId = decoded.id || decoded._id || null;
+          userEmail = decoded.email || userEmail;
+        }
+      } catch (err) {
+        // silent fallback
+      }
+    }
+
+    const safeUserId = (currentUserId && mongoose.Types.ObjectId.isValid(String(currentUserId)))
+      ? new mongoose.Types.ObjectId(String(currentUserId))
+      : null;
+
+    const finalResponse = targetMessage ? targetMessage.content : (rawResponse || answer || 'N/A');
+    const finalReason = reason || feedbackText || '';
+
+    const feedbackDoc = await Feedback.create({
+      userId: safeUserId,
+      userEmail,
+      sessionId: sessionId || null,
+      messageId: targetMessage ? targetMessage._id : null,
+      query: query || 'N/A',
+      response: finalResponse,
+      rating: normalizedRating,
+      reason: finalReason,
+      sources: targetMessage?.sources || []
+    });
+
+    if (targetMessage) {
+      targetMessage.feedback = {
+        rating: normalizedRating,
+        reason: finalReason,
+        updatedAt: new Date()
+      };
+      await targetMessage.save();
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: 'Feedback recorded successfully',
+      feedbackId: feedbackDoc._id
+    });
+  } catch (error) {
+    console.error('[ChatController] Error submitting feedback:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Error saving feedback'
+    });
+  }
+};
+
+// GET /api/chat/feedback - Admin audit listing for feedback
+exports.listFeedback = async (req, res) => {
+  try {
+    const page = parseInt(req.query.page, 10) || 1;
+    const limit = parseInt(req.query.limit, 10) || 25;
+    const rating = req.query.rating;
+
+    const filter = {};
+    if (rating) {
+      if (rating === 'up' || rating === 'like') {
+        filter.rating = { $in: ['up', 'like'] };
+      } else if (rating === 'down' || rating === 'dislike') {
+        filter.rating = { $in: ['down', 'dislike'] };
+      }
+    }
+
+    const total = await Feedback.countDocuments(filter);
+    const feedbackList = await Feedback.find(filter)
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .lean();
+
+    return res.status(200).json({
+      success: true,
+      total,
+      data: feedbackList
+    });
+  } catch (error) {
+    console.error('[ChatController] Error listing feedback:', error);
     return res.status(500).json({ success: false, message: error.message });
   }
 };

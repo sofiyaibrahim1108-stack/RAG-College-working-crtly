@@ -13,11 +13,9 @@ import {
   ExternalLink,
   Pencil,
   X,
-  AlertCircle,
-  Sparkles
+  AlertCircle
 } from 'lucide-react';
 import { GoogleDriveIcon } from './Icons';
-
 
 /**
  * Process text nodes to render citation badges [1], [2], highlight ==...==,
@@ -26,7 +24,6 @@ import { GoogleDriveIcon } from './Icons';
 function processTextNode(text, onCitationClick) {
   if (!text || typeof text !== 'string') return text;
 
-  // Split by highlight (==...==), citation markers ([1], [2], [1, 2]), and images (![alt](url))
   const tokens = text.split(/(==.*?==|\[\d+(?:,\s*\d+)*\]|!\[.*?\]\(.*?\))/g);
 
   const hasSpecialTokens = tokens.some(
@@ -39,7 +36,6 @@ function processTextNode(text, onCitationClick) {
   if (!hasSpecialTokens) return text;
 
   return tokens.map((tok, idx) => {
-    // Subtle wine highlight (==...==)
     if (tok.startsWith('==') && tok.endsWith('==') && tok.length >= 4) {
       return (
         <mark key={idx} className="markdown-mark">
@@ -47,7 +43,6 @@ function processTextNode(text, onCitationClick) {
         </mark>
       );
     }
-    // Inline citation marker (e.g. [1], [2])
     const citMatch = tok.match(/^\[(\d+)\]$/);
     if (citMatch) {
       const citNum = parseInt(citMatch[1], 10);
@@ -65,7 +60,6 @@ function processTextNode(text, onCitationClick) {
         </span>
       );
     }
-    // Multi-citation marker (e.g. [1, 2])
     if (/^\[\d+(?:,\s*\d+)*\]$/.test(tok)) {
       return (
         <span key={idx} className="citation-ref-badge" title={`Citation ${tok}`}>
@@ -73,7 +67,6 @@ function processTextNode(text, onCitationClick) {
         </span>
       );
     }
-    // Inline markdown image: ![alt](url)
     const imgMatch = tok.match(/^!\[(.*?)\]\((.*?)\)$/);
     if (imgMatch) {
       const altText = imgMatch[1];
@@ -95,10 +88,6 @@ function processTextNode(text, onCitationClick) {
   });
 }
 
-/**
- * Recursively walk React children and process text nodes
- * to render citation badges and highlights.
- */
 function processChildren(children, onCitationClick) {
   return React.Children.map(children, (child) => {
     if (typeof child === 'string') {
@@ -111,10 +100,6 @@ function processChildren(children, onCitationClick) {
   });
 }
 
-/**
- * Build ReactMarkdown component overrides that map to our existing CSS classes
- * and inject citation/highlight processing into text content.
- */
 function getMarkdownComponents(onCitationClick) {
   return {
     p: ({ children }) => (
@@ -156,7 +141,6 @@ function getMarkdownComponents(onCitationClick) {
     ),
     em: ({ children }) => <em>{processChildren(children, onCitationClick)}</em>,
     code: ({ className, children, ...props }) => {
-      // Fenced code block (rendered inside <pre> by ReactMarkdown)
       const isInline = !className;
       if (isInline) {
         return <code className="markdown-inline-code" {...props}>{children}</code>;
@@ -164,7 +148,6 @@ function getMarkdownComponents(onCitationClick) {
       return <code className={className} {...props}>{children}</code>;
     },
     pre: ({ children }) => {
-      // Extract language from the code child's className (e.g. "language-js")
       const codeChild = React.Children.toArray(children).find(
         (c) => React.isValidElement(c) && c.type === 'code'
       );
@@ -184,15 +167,9 @@ function getMarkdownComponents(onCitationClick) {
         <table className="markdown-table">{children}</table>
       </div>
     ),
-    th: ({ children }) => (
-      <th>{processChildren(children, onCitationClick)}</th>
-    ),
-    td: ({ children }) => (
-      <td>{processChildren(children, onCitationClick)}</td>
-    ),
-    mark: ({ children }) => (
-      <mark className="markdown-mark">{children}</mark>
-    ),
+    th: ({ children }) => <th>{processChildren(children, onCitationClick)}</th>,
+    td: ({ children }) => <td>{processChildren(children, onCitationClick)}</td>,
+    mark: ({ children }) => <mark className="markdown-mark">{children}</mark>,
     a: ({ href, children }) => (
       <a href={href} target="_blank" rel="noopener noreferrer" className="markdown-link">
         {children}
@@ -201,26 +178,14 @@ function getMarkdownComponents(onCitationClick) {
     hr: () => <hr className="markdown-hr" />,
     blockquote: ({ children }) => (
       <blockquote className="markdown-blockquote">{children}</blockquote>
-    ),
+    )
   };
 }
 
-/**
- * Normalizes raw LLM Markdown output for ReactMarkdown + remarkGfm:
- * 1. Fenced code blocks: Ensures opening and closing code fences (```) are on their own lines
- *    with proper separation from surrounding prose, and moves inline code on fence lines to new lines.
- * 2. Headings: Ensures ATX headings (#, ##, ###) start on a new line and are separated from
- *    following text/list items so they don't merge into surrounding paragraphs or list items.
- * 3. Numbered & bullet lists: Ensures inline list items (e.g. "1. First... 2. Second...")
- *    start on clean new lines while preserving decimals (e.g. 3.14), inline code (`...`),
- *    and tight ordered list grouping.
- */
 function normalizeMarkdown(text) {
   if (!text || typeof text !== 'string') return text;
 
   let result = text;
-
-  // 1. Separate code fences from surrounding text:
   result = result.replace(/([^\n])\s*(```[a-zA-Z0-9_-]*)/g, '$1\n\n$2');
   result = result.replace(/^([ \t]*```[a-zA-Z0-9_-]+)[ \t]+([^\r\n]+)$/gm, '$1\n$2');
   result = result.replace(/([^\n\s`])[ \t]+(```)[ \t]*$/gm, '$1\n$2');
@@ -231,30 +196,23 @@ function normalizeMarkdown(text) {
     result += '\n```';
   }
 
-  // 2. Separate ATX headings (#, ##, ###)
   result = result.replace(/([^\n])\s*(#{1,6}\s+)/g, '$1\n\n$2');
   result = result.replace(/^(#{1,6}\s+[^\r\n]+?)[ \t]+(\d+\.\s+)/gm, '$1\n\n$2');
 
-  // 3. Process non-code chunks to normalize numbered lists:
   const parts = result.split(/(```[\s\S]*?```)/g);
   for (let i = 0; i < parts.length; i += 2) {
     let chunk = parts[i];
-
-    chunk = chunk.replace(/([^\n])\s+(\d+\.\s+)/g, (match, p1, p2) => {
-      return p1 + '\n\n' + p2;
-    });
-
+    chunk = chunk.replace(/([^\n])\s+(\d+\.\s+)/g, (match, p1, p2) => p1 + '\n\n' + p2);
     chunk = chunk.replace(/(\d+\.[^\n]*?)\n\s*\n(?=\s*\d+\.\s+)/g, '$1\n');
-
     parts[i] = chunk;
   }
   result = parts.join('');
 
   return result;
 }
+
 function MarkdownRenderer({ content, onCitationClick }) {
   if (!content) return null;
-
   const normalizedContent = normalizeMarkdown(content);
 
   return (
@@ -271,17 +229,19 @@ function MarkdownRenderer({ content, onCitationClick }) {
 
 export default function MessageItem({
   message,
+  sessionId,
   onRegenerate,
   onEdit,
   onToast,
-  onSendQuery,
-  handleSendMessage,
   isRegenerating = false
 }) {
+  if (!message) return null;
+
   const [copied, setCopied] = useState(false);
   const [userCopied, setUserCopied] = useState(false);
-  const [feedback, setFeedback] = useState(null);
+  const [feedback, setFeedback] = useState(message?.feedback?.rating || null);
   const [activeCitationPreview, setActiveCitationPreview] = useState(null);
+  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
 
   const isUser = message.role === 'user';
   const isError = !isUser && Boolean(
@@ -304,24 +264,75 @@ export default function MessageItem({
     setTimeout(() => setUserCopied(false), 2000);
   };
 
-  const handleFeedback = (type) => {
-    setFeedback((prev) => {
-      const next = prev === type ? null : type;
-      if (next && onToast) {
-        onToast(next === 'like' ? 'Thanks for your feedback!' : 'Feedback recorded', 'success');
+  const submitFeedbackToServer = async (ratingType, reason = '') => {
+    try {
+      setIsSubmittingFeedback(true);
+
+      const token =
+        localStorage.getItem('token') ||
+        localStorage.getItem('auth_token') ||
+        localStorage.getItem('jwt');
+
+      const headers = {
+        'Content-Type': 'application/json'
+      };
+
+      if (token) {
+        headers['Authorization'] = `Bearer ${token.replace(/^"|"$/g, '')}`;
       }
-      return next;
-    });
+
+      const response = await fetch('http://localhost:5000/api/chat/feedback', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          messageId: message._id || message.id,
+          sessionId: sessionId || message.sessionId,
+          rating: ratingType,
+          reason,
+          answer: message.content
+        })
+      });
+
+      const data = await response.json();
+      if (response.ok && data.success) {
+        setFeedback(ratingType);
+        if (onToast) {
+          onToast(ratingType === 'like' ? 'Thanks for your feedback!' : 'Feedback recorded', 'success');
+        }
+      } else {
+        if (onToast) onToast(data.message || 'Failed to submit feedback', 'error');
+      }
+    } catch (err) {
+      console.error('Failed to submit feedback:', err);
+      if (onToast) onToast('Failed to record feedback', 'error');
+    } finally {
+      setIsSubmittingFeedback(false);
+    }
   };
 
-  // Open Document / Image / Google Drive relevant preview modal (NEVER open full doc directly)
+  const handleFeedback = (type) => {
+    if (isSubmittingFeedback) return;
+    if (feedback === type) {
+      setFeedback(null);
+      return;
+    }
+
+    if (type === 'dislike') {
+      const reasonPrompt = window.prompt(
+        'What was wrong with this answer? (e.g. incorrect data, bad table, etc.)',
+        ''
+      );
+      submitFeedbackToServer('dislike', reasonPrompt || '');
+    } else {
+      submitFeedbackToServer('like', '');
+    }
+  };
+
   const handleOpenSource = (src) => {
     setActiveCitationPreview(src);
   };
 
-  // Open complete file only if explicitly requested by user as a secondary action
   const handleOpenFullDocument = (src) => {
-    // 1. Extracted Image / Diagram Source
     if (src.type === 'image' || src.imageId) {
       const imgId = src.imageId || src._id;
       if (imgId) {
@@ -330,7 +341,6 @@ export default function MessageItem({
       }
     }
 
-    // 2. Google Drive document with webViewLink
     const driveUrl = src.webViewLink || (src.documentId && src.documentId.driveMetadata?.webViewLink);
     if (src.source === 'google_drive' || driveUrl) {
       if (driveUrl) {
@@ -339,7 +349,6 @@ export default function MessageItem({
       }
     }
 
-    // 3. Local Document Source (PDF, TXT, CSV, DOCX, etc.)
     const docId = src.documentId?._id || src.documentId;
     if (docId) {
       const docFileUrl = `http://localhost:5000/api/documents/${docId}/file`;
@@ -352,7 +361,6 @@ export default function MessageItem({
     }
   };
 
-  // Handle inline citation click ([1], [2]): open relevant content preview modal
   const handleCitationClick = (citNum) => {
     const foundSource = (message.sources || []).find(
       (s) => s.citationIndex === citNum || s.citationMarker === `[${citNum}]`
@@ -391,7 +399,6 @@ export default function MessageItem({
           </div>
         )}
 
-        {/* Message Content */}
         {isUser ? (
           <>
             <div className="message-user-text">{message.content}</div>
@@ -454,37 +461,7 @@ export default function MessageItem({
           </div>
         )}
 
-        {/* Interactive Suggested Questions Pills */}
-        {!isUser && !isError && message.suggestedQuestions && message.suggestedQuestions.length > 0 && (
-          <div className="suggested-questions-container flex flex-wrap gap-2 mt-3">
-            {message.suggestedQuestions.map((item, qIdx) => {
-              const questionText = typeof item === 'string' ? item : (item?.question || item?.text || '');
-              if (!questionText || !questionText.trim()) return null;
-              const cleanText = questionText.trim();
-
-              return (
-                <button
-                  key={qIdx}
-                  type="button"
-                  className="suggested-question-pill text-xs font-medium px-3.5 py-1.5 rounded-full border border-blue-500/30 bg-blue-50/60 dark:bg-blue-950/40 text-blue-600 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/60 transition shadow-sm cursor-pointer flex items-center gap-1.5"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const sendFn = onSendQuery || handleSendMessage;
-                    if (typeof sendFn === 'function') {
-                      sendFn(cleanText);
-                    }
-                  }}
-                  title={`Ask: "${cleanText}"`}
-                >
-                  <Sparkles size={13} className="shrink-0" aria-hidden="true" />
-                  <span>{cleanText}</span>
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Attached Visual Diagrams / Screenshots (Rendered ABOVE normal citations row) */}
+        {/* Attached Visual Diagrams / Screenshots */}
         {!isUser && !isError && imageSources.length > 0 && (
           <div className="message-attached-images">
             <div className="attached-images-heading">
@@ -539,7 +516,7 @@ export default function MessageItem({
           </div>
         )}
 
-        {/* Sources Section (Multimodal: Documents & Diagrams) */}
+        {/* Sources Section */}
         {!isUser && !isError && message.sources && message.sources.length > 0 && (
           <div className="sources-container">
             <div className="sources-heading">
@@ -551,11 +528,9 @@ export default function MessageItem({
                 const isDrive = src.source === 'google_drive' || Boolean(src.webViewLink);
                 const citNum = src.citationIndex || (idx + 1);
 
-                // Clean single-line document name without path clutter
                 const rawFilename = src.filename || src.label || 'Document';
                 const cleanFilename = rawFilename.split(/[/\\]/).pop();
 
-                // Small metadata subtitle
                 const pageNum = src.pageNumber || src.page;
                 const sheetName = src.sheetName;
                 const slideNum = src.slideNumber;
@@ -614,7 +589,7 @@ export default function MessageItem({
           </div>
         )}
 
-        {/* Assistant Actions Bar (Copy, Regenerate, ThumbsUp, ThumbsDown) */}
+        {/* Assistant Actions Bar: Copy, Regenerate, ThumbsUp, ThumbsDown */}
         {!isUser && !isError && (
           <div className="assistant-actions-bar">
             <button
@@ -643,7 +618,10 @@ export default function MessageItem({
             <button
               type="button"
               className="btn-msg-action"
-              style={{ color: feedback === 'like' ? '#15803D' : undefined }}
+              style={{
+                color: feedback === 'like' ? '#15803D' : undefined,
+                fontWeight: feedback === 'like' ? 600 : 'normal'
+              }}
               onClick={() => handleFeedback('like')}
               title="Helpful"
             >
@@ -653,7 +631,10 @@ export default function MessageItem({
             <button
               type="button"
               className="btn-msg-action"
-              style={{ color: feedback === 'dislike' ? '#B42318' : undefined }}
+              style={{
+                color: feedback === 'dislike' ? '#B42318' : undefined,
+                fontWeight: feedback === 'dislike' ? 600 : 'normal'
+              }}
               onClick={() => handleFeedback('dislike')}
               title="Not helpful"
             >
@@ -662,7 +643,7 @@ export default function MessageItem({
           </div>
         )}
 
-        {/* Relevant Chunk/Diagram Preview Modal for Text/PDF/Image/Drive citations */}
+        {/* Source Content Preview Modal */}
         {activeCitationPreview && (
           <div className="modal-backdrop" onClick={() => setActiveCitationPreview(null)}>
             <div

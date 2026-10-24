@@ -28,14 +28,19 @@ function formatRelativeTime(dateString) {
   const date = new Date(dateString);
   const now = new Date();
   const diffSec = Math.floor((now - date) / 1000);
+
   if (diffSec < 60) return 'Just now';
+
   const diffMin = Math.floor(diffSec / 60);
-  if (diffMin < 60) return `${diffMin} ${diffMin === 1 ? 'minute' : 'minutes'} ago`;
-  const diffHour = Math.floor(diffMin / 24);
+  if (diffMin < 60) return `${diffMin} ${diffMin === 1 ? 'min' : 'mins'} ago`;
+
+  const diffHour = Math.floor(diffMin / 60);
   if (diffHour < 24) return `${diffHour} ${diffHour === 1 ? 'hour' : 'hours'} ago`;
+
   const diffDays = Math.floor(diffHour / 24);
-  if (diffDays === 1) return '1 day ago';
+  if (diffDays === 1) return 'Yesterday';
   if (diffDays < 7) return `${diffDays} days ago`;
+
   return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
 
@@ -307,7 +312,7 @@ export default function Sidebar({
 
         {/* Vertical Navigation Menu */}
         <div className="sidebar-nav-menu">
-          {/* 1. New Chat (Highlighted) */}
+          {/* 1. New Chat */}
           <button
             type="button"
             className="sidebar-nav-item active-new-chat"
@@ -340,7 +345,6 @@ export default function Sidebar({
             {!isCollapsed && <span>Search</span>}
           </button>
 
-          {/* Search Input Box (Collapsible/Accessible) */}
           {!isCollapsed && showSearchInput && (
             <div className="sidebar-search-inline">
               <input
@@ -430,12 +434,11 @@ export default function Sidebar({
           </button>
         </div>
 
-        {/* Divider & Scrollable History Area (Expanded only) */}
+        {/* Divider & Scrollable History Area */}
         {!isCollapsed && (
           <>
             <div className="sidebar-divider-line" />
             <div className="sidebar-scroll-area">
-              {/* Pinned Section */}
               {pinnedConversations.length > 0 && (
                 <div className="sidebar-section">
                   <div className="sidebar-section-title">Pinned</div>
@@ -445,7 +448,6 @@ export default function Sidebar({
                 </div>
               )}
 
-              {/* Recent Chats Section */}
               <div className="sidebar-section">
                 <div className="sidebar-section-title">Recent Chats</div>
                 <div className="history-list">
@@ -467,10 +469,9 @@ export default function Sidebar({
           </>
         )}
 
-        {/* Sidebar Bottom: Knowledge Base + Student Profile */}
+        {/* Sidebar Bottom */}
         {!isCollapsed ? (
           <div className="sidebar-bottom-container">
-            {/* Knowledge Base Row (Admin Only) */}
             {currentUser?.role === 'admin' && (
               <div
                 className="sidebar-bottom-card"
@@ -490,7 +491,6 @@ export default function Sidebar({
               </div>
             )}
 
-            {/* User Profile / Auth Row */}
             {currentUser ? (
               <div
                 className="sidebar-bottom-card student-card"

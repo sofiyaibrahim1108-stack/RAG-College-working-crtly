@@ -3,7 +3,7 @@ const TOKEN_KEY = 'rag_college_token';
 
 export function getAuthToken() {
   try {
-    return localStorage.getItem(TOKEN_KEY);
+    return localStorage.getItem(TOKEN_KEY) || localStorage.getItem('token');
   } catch {
     return null;
   }
@@ -13,8 +13,10 @@ export function setAuthToken(token) {
   try {
     if (token) {
       localStorage.setItem(TOKEN_KEY, token);
+      localStorage.setItem('token', token);
     } else {
       localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem('token');
     }
   } catch (err) {
     console.warn('Could not persist auth token', err);
@@ -514,3 +516,24 @@ export async function getAuditLogs(params = {}) {
   }
   return data;
 }
+
+export async function getFeedbackLogs(params = {}) {
+  const searchParams = new URLSearchParams();
+  Object.entries(params).forEach(([key, val]) => {
+    if (val !== undefined && val !== null && val !== '') {
+      searchParams.append(key, val);
+    }
+  });
+  const query = searchParams.toString();
+  const res = await fetch(`${API_BASE}/chat/feedback${query ? `?${query}` : ''}`, {
+    headers: getAuthHeaders()
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    const error = new Error(data.message || 'Failed to fetch feedback logs');
+    error.response = { status: res.status, data };
+    error.status = res.status;
+    throw error;
+  }
+  return data;
+} 
