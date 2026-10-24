@@ -1,9 +1,15 @@
 const mongoose = require('mongoose');
-const { MONGO_URI } = require('./env');
 
 const connectDB = async () => {
+  let envUri = process.env.MONGO_URI ? String(process.env.MONGO_URI).trim().replace(/^["']|["']$/g, '') : '';
+  
+  // Valid scheme illana direct default string-ku force panrom
+  if (!envUri.startsWith('mongodb://') && !envUri.startsWith('mongodb+srv://')) {
+    envUri = 'mongodb://127.0.0.1:27017/rag_production_college';
+  }
+
   try {
-    const conn = await mongoose.connect(MONGO_URI, {
+    const conn = await mongoose.connect(envUri, {
       autoIndex: true
     });
     console.log(`[MongoDB] Connected successfully: ${conn.connection.host}/${conn.connection.name}`);
