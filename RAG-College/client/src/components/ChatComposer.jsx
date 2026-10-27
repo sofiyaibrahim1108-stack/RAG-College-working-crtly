@@ -9,7 +9,7 @@ export default function ChatComposer({
   onSendMessage,
   onStopGeneration,
   onOpenUpload,
-  onOpenDrive,
+  onOpenDrive,  
   isSending,
   selectedDepartmentName,
   visualMode = null,

@@ -2,14 +2,12 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   UploadCloud,
   X,
-  Check,
   AlertCircle,
   Loader2,
-  Trash2,
   Globe,
   Lock,
-  Building2,
-  CheckCircle2
+  FileText,
+  Info
 } from 'lucide-react';
 import MultiSelectDropdown from './MultiSelectDropdown';
 import { getFriendlyErrorMessage } from '../utils/errorHandler';
@@ -39,6 +37,7 @@ export default function UploadModal({
   const LARGE_FILE_THRESHOLD = 2 * 1024 * 1024;
   const MAX_FILE_SIZE = 25 * 1024 * 1024;
   const MAX_BATCH_FILES = 10;
+  const DROPZONE_MIN_HEIGHT = '160px'; // change this to make the drop zone taller or shorter
 
   const supportedExtensions = ['.pdf', '.doc', '.docx', '.csv', '.xls', '.xlsx', '.txt', '.ppt', '.pptx'];
 
@@ -74,7 +73,13 @@ export default function UploadModal({
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
+  const getExtLabel = (name) => {
+    const parts = String(name || '').split('.');
+    return parts.length > 1 ? parts.pop().toUpperCase().slice(0, 4) : 'FILE';
+  };
+
   const totalBatchSize = stagedFiles.reduce((acc, f) => acc + (f.size || 0), 0);
+  const maxSizeLabel = formatSize(MAX_FILE_SIZE).replace('.0', '');
 
   const handleFiles = (incomingFiles) => {
     setErrorMsg('');
@@ -146,35 +151,70 @@ export default function UploadModal({
     }
   };
 
+  // ---- Derived UI state (display only) ----
+  const hasFiles = stagedFiles.length > 0;
+  const needsDepartment = !isPublic && selectedDeptIds.length === 0;
+  const uploadDisabled = isUploading || !hasFiles;
+
+  let footerHint = '';
+  if (!hasFiles) footerHint = 'Add at least one file to continue';
+  else if (needsDepartment) footerHint = 'Select a department before uploading';
+
+  const primaryLabel = isUploading
+    ? 'Uploading...'
+    : isReupload
+      ? 'Replace File'
+      : hasFiles
+        ? `Upload ${stagedFiles.length} file${stagedFiles.length > 1 ? 's' : ''}`
+        : 'Upload Now';
+
+  const handleDropzoneKey = (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      fileInputRef.current?.click();
+    }
+  };
+
   return (
     <div className="modal-backdrop" onClick={handleClose}>
+      <style>{`
+        @keyframes upload-progress-slide {
+          0% { transform: translateX(-100%); }
+          100% { transform: translateX(350%); }
+        }
+      `}</style>
+
       <div
         className="modal-container"
+        role="dialog"
+        aria-modal="true"
+        aria-label={isReupload ? 'Replace Document' : 'Upload Documents'}
         style={{
-          maxWidth: '540px',
+          maxWidth: '580px',
           width: '92%',
           background: '#FFFFFF',
           borderRadius: '16px',
-          boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05)',
+          boxShadow: '0 24px 48px -12px rgba(15, 23, 42, 0.35)',
           overflow: 'hidden',
           display: 'flex',
-          flexDirection: 'column'
+          flexDirection: 'column',
+          maxHeight: '92vh'
         }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div style={{
-          padding: '18px 24px',
+          padding: '20px 24px',
           display: 'flex',
-          alignItems: 'center',
+          alignItems: 'flex-start',
           justifyContent: 'space-between',
-          borderBottom: '1px solid #F1F5F9'
+          borderBottom: '1px solid #E2E8F0'
         }}>
           <div>
-            <h2 style={{ fontSize: '16px', fontWeight: 700, color: '#0F172A', margin: 0 }}>
+            <h2 style={{ fontSize: '18px', fontWeight: 700, color: '#0F172A', margin: 0 }}>
               {isReupload ? 'Replace Document' : 'Upload Documents'}
             </h2>
-            <p style={{ fontSize: '12.5px', color: '#64748B', margin: '2px 0 0' }}>
+            <p style={{ fontSize: '13.5px', color: '#475569', margin: '4px 0 0' }}>
               Add PDF, Word, Excel, or Text files to the knowledge base
             </p>
           </div>
@@ -182,13 +222,19 @@ export default function UploadModal({
             type="button"
             onClick={handleClose}
             disabled={isUploading}
+            aria-label="Close"
             style={{
-              background: '#F8FAFC',
+              background: '#F1F5F9',
               border: 'none',
-              borderRadius: '8px',
-              padding: '6px',
-              cursor: 'pointer',
-              color: '#64748B'
+              borderRadius: '10px',
+              width: '36px',
+              height: '36px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: isUploading ? 'not-allowed' : 'pointer',
+              color: '#334155',
+              flexShrink: 0
             }}
           >
             <X size={18} />
@@ -196,66 +242,77 @@ export default function UploadModal({
         </div>
 
         {/* Content */}
-        <div style={{ padding: '20px 24px', overflowY: 'auto', maxHeight: '70vh' }}>
-          {/* Segmented Control Bar */}
-          <div style={{
-            background: '#F8FAFC',
-            padding: '10px 14px',
-            borderRadius: '10px',
-            border: '1px solid #E2E8F0',
-            marginBottom: '16px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              {isPublic ? <Globe size={16} color="#16A34A" /> : <Lock size={16} color="#475467" />}
-              <span style={{ fontSize: '12.5px', fontWeight: 600, color: '#334155' }}>
-                {isPublic ? 'Public (All Departments)' : 'Department Private Access'}
-              </span>
-            </div>
+        <div style={{ padding: '20px 24px', overflowY: 'auto', flex: '1 1 auto', minHeight: 'min(460px, calc(92vh - 200px))' }}>
+          {/* Access toggle + helper text */}
+          <div style={{ marginBottom: '18px' }}>
+            <div style={{
+              background: '#F8FAFC',
+              padding: '10px 14px',
+              borderRadius: '12px',
+              border: '1px solid #E2E8F0',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '12px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {isPublic ? <Globe size={17} color="#15803D" /> : <Lock size={17} color="#334155" />}
+                <span style={{ fontSize: '13.5px', fontWeight: 600, color: '#1E293B' }}>
+                  {isPublic ? 'Public (All Departments)' : 'Department Private Access'}
+                </span>
+              </div>
 
-            <div style={{ display: 'flex', background: '#E2E8F0', padding: '2px', borderRadius: '7px' }}>
-              <button
-                type="button"
-                onClick={() => { setIsPublic(false); setDeptError(''); }}
-                style={{
-                  border: 'none',
-                  padding: '4px 12px',
-                  borderRadius: '5px',
-                  fontSize: '11.5px',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  background: !isPublic ? '#FFFFFF' : 'transparent',
-                  color: !isPublic ? '#0F172A' : '#64748B',
-                  boxShadow: !isPublic ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
-                }}
-              >
-                Private
-              </button>
-              <button
-                type="button"
-                onClick={() => { setIsPublic(true); setSelectedDeptIds([]); setDeptError(''); }}
-                style={{
-                  border: 'none',
-                  padding: '4px 12px',
-                  borderRadius: '5px',
-                  fontSize: '11.5px',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  background: isPublic ? '#16A34A' : 'transparent',
-                  color: isPublic ? '#FFFFFF' : '#64748B',
-                  boxShadow: isPublic ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
-                }}
-              >
-                Public
-              </button>
+              <div style={{ display: 'flex', background: '#E2E8F0', padding: '3px', borderRadius: '9px', gap: '2px' }}>
+                <button
+                  type="button"
+                  aria-pressed={!isPublic}
+                  onClick={() => { setIsPublic(false); setDeptError(''); }}
+                  style={{
+                    border: 'none',
+                    padding: '6px 14px',
+                    minHeight: '32px',
+                    borderRadius: '7px',
+                    fontSize: '12.5px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    background: !isPublic ? '#FFFFFF' : 'transparent',
+                    color: !isPublic ? '#0F172A' : '#475569',
+                    boxShadow: !isPublic ? '0 1px 3px rgba(0,0,0,0.12)' : 'none'
+                  }}
+                >
+                  Private
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={isPublic}
+                  onClick={() => { setIsPublic(true); setSelectedDeptIds([]); setDeptError(''); }}
+                  style={{
+                    border: 'none',
+                    padding: '6px 14px',
+                    minHeight: '32px',
+                    borderRadius: '7px',
+                    fontSize: '12.5px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    background: isPublic ? '#15803D' : 'transparent',
+                    color: isPublic ? '#FFFFFF' : '#475569',
+                    boxShadow: isPublic ? '0 1px 3px rgba(0,0,0,0.12)' : 'none'
+                  }}
+                >
+                  Public
+                </button>
+              </div>
             </div>
+            <p style={{ fontSize: '12.5px', color: '#475569', margin: '8px 2px 0', lineHeight: 1.4 }}>
+              {isPublic
+                ? 'Everyone in every department can view and search these files.'
+                : 'Only the selected departments can view and search these files.'}
+            </p>
           </div>
 
           {/* Department Select if Private */}
           {!isPublic && (
-            <div style={{ marginBottom: '16px' }}>
+            <div style={{ marginBottom: '18px' }}>
               <MultiSelectDropdown
                 ref={deptDropdownRef}
                 label="Assign Target Department(s)"
@@ -275,7 +332,11 @@ export default function UploadModal({
 
           {/* Dropzone */}
           <div
-            className={`upload-dropzone ${isDragging ? 'dragging' : ''}`}
+            className="upload-dz-compact"
+            role="button"
+            tabIndex={0}
+            aria-label="Browse or drag and drop files"
+            onKeyDown={handleDropzoneKey}
             onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
             onDragLeave={() => setIsDragging(false)}
             onDrop={(e) => {
@@ -285,12 +346,20 @@ export default function UploadModal({
             }}
             onClick={() => fileInputRef.current?.click()}
             style={{
-              padding: '24px 16px',
-              border: isDragging ? '2px dashed #2563EB' : '2px dashed #E2E8F0',
-              borderRadius: '12px',
+              padding: '20px 16px',
+              boxSizing: 'border-box',
+              flexDirection: 'column',
+              justifyContent: 'center',
+              minHeight: DROPZONE_MIN_HEIGHT,
               textAlign: 'center',
+              border: isDragging ? '2px dashed #1D4ED8' : '2px dashed #93B4F5',
+              borderRadius: '12px',
               cursor: 'pointer',
-              background: isDragging ? '#EFF6FF' : '#FAFAFA'
+              background: isDragging ? '#DBEAFE' : '#F5F8FF',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              transition: 'background 0.15s ease, border-color 0.15s ease'
             }}
           >
             <input
@@ -304,71 +373,208 @@ export default function UploadModal({
                 e.target.value = null;
               }}
             />
-            <UploadCloud size={30} color="#2563EB" style={{ margin: '0 auto 8px' }} />
-            <div style={{ fontSize: '13px', fontWeight: 600, color: '#1E293B' }}>
-              Click to browse or drag & drop files
+            <div style={{
+              width: '48px',
+              height: '48px',
+              borderRadius: '12px',
+              background: '#DBEAFE',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0
+            }}>
+              <UploadCloud size={26} color="#1D4ED8" />
             </div>
-            <div style={{ fontSize: '11.5px', color: '#94A3B8', marginTop: '4px' }}>
-              PDF, DOCX, XLSX, TXT, CSV (up to 25 MB)
+            <div>
+              <div style={{ fontSize: '14px', fontWeight: 600, color: '#0F172A' }}>
+                Click to browse or drag & drop files
+              </div>
+              <div style={{ fontSize: '12.5px', color: '#475569', marginTop: '2px' }}>
+                PDF, DOCX, XLSX, TXT, CSV · up to {maxSizeLabel} each
+              </div>
             </div>
           </div>
 
-          {/* Staged Files Cards */}
-          {stagedFiles.length > 0 && (
-            <div style={{ marginTop: '14px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#64748B', marginBottom: '6px' }}>
-                <span>Selected ({stagedFiles.length}) • {formatSize(totalBatchSize)}</span>
-                <span
-                  onClick={() => setStagedFiles([])}
-                  style={{ color: '#DC2626', cursor: 'pointer', fontWeight: 500 }}
-                >
-                  Clear all
+          {/* Inline error */}
+          {errorMsg && (
+            <div
+              role="alert"
+              style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: '8px',
+                padding: '10px 12px',
+                background: '#FEF2F2',
+                border: '1px solid #FECACA',
+                borderRadius: '10px',
+                color: '#991B1B',
+                fontSize: '13px',
+                marginTop: '12px'
+              }}
+            >
+              <AlertCircle size={16} style={{ flexShrink: 0, marginTop: '1px' }} />
+              <span>{errorMsg}</span>
+            </div>
+          )}
+
+          {/* Staged Files */}
+          {hasFiles && (
+            <div style={{ marginTop: '16px' }}>
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                fontSize: '13px',
+                color: '#475569',
+                marginBottom: '8px'
+              }}>
+                <span style={{ fontWeight: 600, color: '#1E293B' }}>
+                  Selected files ({stagedFiles.length})
                 </span>
+                {!isReupload && (
+                  <button
+                    type="button"
+                    onClick={() => setStagedFiles([])}
+                    disabled={isUploading}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      padding: '4px 6px',
+                      color: '#B91C1C',
+                      cursor: isUploading ? 'not-allowed' : 'pointer',
+                      fontWeight: 600,
+                      fontSize: '13px'
+                    }}
+                  >
+                    Clear all
+                  </button>
+                )}
               </div>
-              <div style={{ maxHeight: '130px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+
+              <div style={{
+                maxHeight: '170px',
+                overflowY: 'auto',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px'
+              }}>
                 {stagedFiles.map((file, idx) => (
                   <div
-                    key={idx}
+                    key={`${file.name}-${file.size}-${idx}`}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: '8px 12px',
-                      background: '#F8FAFC',
+                      gap: '12px',
+                      padding: '8px 8px 8px 12px',
+                      background: '#FFFFFF',
                       border: '1px solid #E2E8F0',
-                      borderRadius: '8px'
+                      borderRadius: '10px'
                     }}
                   >
-                    <div style={{ fontSize: '12.5px', color: '#1E293B', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {file.name}
+                    <div style={{
+                      width: '36px',
+                      height: '36px',
+                      borderRadius: '8px',
+                      background: '#EEF2FF',
+                      color: '#3730A3',
+                      fontSize: '10.5px',
+                      fontWeight: 700,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0
+                    }}>
+                      {getExtLabel(file.name) || <FileText size={16} />}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{
+                        fontSize: '13.5px',
+                        color: '#0F172A',
+                        fontWeight: 600,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap'
+                      }}>
+                        {file.name}
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#475569', marginTop: '1px' }}>
+                        {formatSize(file.size)}
+                      </div>
                     </div>
                     <button
                       type="button"
-                      onClick={() => setStagedFiles((prev) => prev.filter((_, i) => i !== idx))}
-                      style={{ background: 'none', border: 'none', color: '#94A3B8', cursor: 'pointer', padding: '2px' }}
+                      aria-label={`Remove ${file.name}`}
+                      disabled={isUploading}
+                      onClick={() => {
+                        const next = stagedFiles.filter((_, i) => i !== idx);
+                        setStagedFiles(next);
+                        setIsLargeFile(next.some((f) => f.size > LARGE_FILE_THRESHOLD));
+                      }}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: '#475569',
+                        cursor: isUploading ? 'not-allowed' : 'pointer',
+                        width: '36px',
+                        height: '36px',
+                        borderRadius: '8px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0
+                      }}
                     >
-                      <X size={14} />
+                      <X size={16} />
                     </button>
                   </div>
                 ))}
               </div>
+
+              {isLargeFile && !isUploading && (
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  marginTop: '10px',
+                  fontSize: '12.5px',
+                  color: '#475569'
+                }}>
+                  <Info size={14} style={{ flexShrink: 0 }} />
+                  <span>Larger files can take a little longer to upload and process.</span>
+                </div>
+              )}
             </div>
           )}
 
-          {errorMsg && (
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '9px 12px',
-              background: '#FEF2F2',
-              borderRadius: '8px',
-              color: '#DC2626',
-              fontSize: '12px',
-              marginTop: '12px'
-            }}>
-              <AlertCircle size={15} style={{ flexShrink: 0 }} />
-              <span>{errorMsg}</span>
+          {/* Upload progress (indeterminate, since the upload API reports no percentage) */}
+          {isUploading && (
+            <div style={{ marginTop: '16px' }} role="status" aria-live="polite">
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                fontSize: '12.5px',
+                color: '#334155',
+                marginBottom: '6px',
+                fontWeight: 600
+              }}>
+                <span>Uploading {stagedFiles.length} file{stagedFiles.length > 1 ? 's' : ''}...</span>
+                <span style={{ fontWeight: 500, color: '#475569' }}>{formatSize(totalBatchSize)}</span>
+              </div>
+              <div style={{
+                height: '6px',
+                width: '100%',
+                background: '#E2E8F0',
+                borderRadius: '999px',
+                overflow: 'hidden'
+              }}>
+                <div style={{
+                  height: '100%',
+                  width: '30%',
+                  background: '#1D4ED8',
+                  borderRadius: '999px',
+                  animation: 'upload-progress-slide 1.2s ease-in-out infinite'
+                }} />
+              </div>
             </div>
           )}
         </div>
@@ -376,51 +582,69 @@ export default function UploadModal({
         {/* Footer */}
         <div style={{
           padding: '14px 24px',
-          borderTop: '1px solid #F1F5F9',
+          borderTop: '1px solid #E2E8F0',
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'flex-end',
-          gap: '8px',
-          background: '#FAFAFA'
+          justifyContent: 'space-between',
+          gap: '12px',
+          background: '#F8FAFC'
         }}>
-          <button
-            type="button"
-            onClick={handleClose}
-            disabled={isUploading}
-            style={{
-              background: '#FFFFFF',
-              border: '1px solid #CBD5E1',
-              borderRadius: '7px',
-              padding: '7px 14px',
-              fontSize: '12.5px',
-              fontWeight: 600,
-              color: '#475467',
-              cursor: 'pointer'
-            }}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={handleUploadSubmit}
-            disabled={isUploading || stagedFiles.length === 0}
-            style={{
-              background: stagedFiles.length > 0 ? '#2563EB' : '#94A3B8',
-              border: 'none',
-              borderRadius: '7px',
-              padding: '7px 16px',
-              fontSize: '12.5px',
-              fontWeight: 600,
-              color: '#FFFFFF',
-              cursor: stagedFiles.length > 0 ? 'pointer' : 'not-allowed',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px'
-            }}
-          >
-            {isUploading ? <Loader2 size={14} className="spin" /> : null}
-            <span>{isUploading ? 'Uploading...' : 'Upload Now'}</span>
-          </button>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: '13px', color: '#334155', fontWeight: 600 }}>
+              {hasFiles
+                ? `${stagedFiles.length} file${stagedFiles.length > 1 ? 's' : ''} · ${formatSize(totalBatchSize)}`
+                : 'No files selected'}
+            </div>
+            {footerHint && !isUploading && (
+              <div style={{ fontSize: '12px', color: '#475569', marginTop: '2px' }}>
+                {footerHint}
+              </div>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+            <button
+              type="button"
+              onClick={handleClose}
+              disabled={isUploading}
+              style={{
+                background: '#FFFFFF',
+                border: '1px solid #CBD5E1',
+                borderRadius: '10px',
+                padding: '0 16px',
+                minHeight: '40px',
+                fontSize: '13.5px',
+                fontWeight: 600,
+                color: '#334155',
+                cursor: isUploading ? 'not-allowed' : 'pointer'
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleUploadSubmit}
+              disabled={uploadDisabled}
+              title={!hasFiles ? 'Add at least one file to upload' : undefined}
+              style={{
+                background: uploadDisabled ? '#94A3B8' : '#1D4ED8',
+                border: 'none',
+                borderRadius: '10px',
+                padding: '0 18px',
+                minHeight: '40px',
+                fontSize: '13.5px',
+                fontWeight: 600,
+                color: '#FFFFFF',
+                cursor: uploadDisabled ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+            >
+              {isUploading ? <Loader2 size={15} className="spin" /> : null}
+              <span>{primaryLabel}</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>

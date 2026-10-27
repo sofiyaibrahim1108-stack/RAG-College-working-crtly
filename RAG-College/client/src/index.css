@@ -5869,6 +5869,59 @@ body {
   color: var(--text-muted);
 }
 
+/* ==========================================================================
+   ChatGPT Style Dynamic Slim Scrollbar (Custom for Dark Sidebar)
+   ========================================================================== */
+
+/* Firefox configuration */
+.sidebar-custom-scroll-area {
+  scrollbar-width: thin !important;
+  scrollbar-color: transparent transparent !important;
+  transition: scrollbar-color 0.2s ease-in-out;
+}
+
+.sidebar-custom-scroll-area:hover {
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent !important;
+}
+
+/* Chrome, Edge, Safari WebKit configuration */
+/* Exact Sidebar Styling */
+.btn-exact-new-chat:hover {
+  background: #142342 !important;
+  border-color: rgba(255, 255, 255, 0.16) !important;
+}
+
+.exact-nav-link:hover {
+  background: rgba(255, 255, 255, 0.05) !important;
+  color: #FFFFFF !important;
+}
+
+.exact-bottom-profile-card:hover {
+  background: #121F3D !important;
+  border-color: rgba(255, 255, 255, 0.14) !important;
+}
+
+.sidebar-chat-row:hover {
+  background: rgba(255, 255, 255, 0.05) !important;
+  color: #FFFFFF !important;
+}
+
+.sidebar-chat-row .chat-row-more-btn {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.sidebar-chat-row:hover .chat-row-more-btn {
+  opacity: 1;
+}
+
+.dropdown-menu-item:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+.dropdown-menu-item.danger:hover {
+  background: rgba(239, 68, 68, 0.18) !important;
+}
 
 
 

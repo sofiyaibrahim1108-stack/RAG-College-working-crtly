@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   FileText,
   Upload,
@@ -14,6 +14,48 @@ import {
   Loader2
 } from 'lucide-react';
 import { GoogleDriveIcon } from './Icons';
+
+/* ------------------------------------------------------------------
+   Slim auto-hiding scrollbar (kept in this file, no separate CSS).
+   - Hidden by default, appears on hover or while scrolling.
+   - Thin rounded thumb, no arrow buttons, darker on hover/drag.
+   - Chrome / Edge / Safari use the webkit rules; Firefox uses the
+     standard scrollbar-width / scrollbar-color fallback.
+------------------------------------------------------------------ */
+const KB_SCROLL_CSS = `
+.kb-scrollhost::-webkit-scrollbar { width: 12px; height: 12px; }
+.kb-scrollhost::-webkit-scrollbar-track { background: transparent; }
+.kb-scrollhost::-webkit-scrollbar-corner { background: transparent; }
+.kb-scrollhost::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+.kb-scrollhost::-webkit-scrollbar-thumb {
+  min-height: 48px;
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-color: transparent;
+  background-clip: padding-box;
+}
+.kb-scrollhost:hover::-webkit-scrollbar-thumb,
+.kb-scrollhost.kb-scrolling::-webkit-scrollbar-thumb {
+  background-color: rgba(100, 116, 139, 0.40);
+}
+.kb-scrollhost::-webkit-scrollbar-thumb:hover,
+.kb-scrollhost::-webkit-scrollbar-thumb:active {
+  background-color: rgba(100, 116, 139, 0.70);
+}
+[data-theme='dark'] .kb-scrollhost:hover::-webkit-scrollbar-thumb,
+[data-theme='dark'] .kb-scrollhost.kb-scrolling::-webkit-scrollbar-thumb {
+  background-color: rgba(148, 163, 184, 0.35);
+}
+[data-theme='dark'] .kb-scrollhost::-webkit-scrollbar-thumb:hover,
+[data-theme='dark'] .kb-scrollhost::-webkit-scrollbar-thumb:active {
+  background-color: rgba(148, 163, 184, 0.65);
+}
+
+@supports not selector(::-webkit-scrollbar) {
+  .kb-scrollhost { scrollbar-width: thin; scrollbar-color: transparent transparent; }
+  .kb-scrollhost:hover, .kb-scrollhost.kb-scrolling { scrollbar-color: rgba(100, 116, 139, 0.45) transparent; }
+}
+`;
 
 export default function DocumentsView({
   documents = [],
@@ -35,6 +77,46 @@ export default function DocumentsView({
 
   const fileInputRef = useRef(null);
   const targetReuploadDocRef = useRef(null);
+  const rootRef = useRef(null);
+
+  // Find whichever ancestor actually scrolls this page and give it the slim,
+  // auto-hiding scrollbar. Works even if the scroll container is outside this file.
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return undefined;
+
+    let host = null;
+    let node = root;
+    while (node && node !== document.body && node !== document.documentElement) {
+      const { overflowY } = window.getComputedStyle(node);
+      if (overflowY === 'auto' || overflowY === 'scroll') {
+        host = node;
+        break;
+      }
+      node = node.parentElement;
+    }
+
+    const usesWindow = !host;
+    if (usesWindow) host = document.documentElement;
+
+    host.classList.add('kb-scrollhost');
+
+    let timer = null;
+    const onScroll = () => {
+      host.classList.add('kb-scrolling');
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => host.classList.remove('kb-scrolling'), 900);
+    };
+
+    const target = usesWindow ? window : host;
+    target.addEventListener('scroll', onScroll, { passive: true });
+
+    return () => {
+      target.removeEventListener('scroll', onScroll);
+      if (timer) clearTimeout(timer);
+      host.classList.remove('kb-scrollhost', 'kb-scrolling');
+    };
+  }, []);
 
   // Department name resolver
   const getDeptNames = (deptIds) => {
@@ -184,7 +266,9 @@ export default function DocumentsView({
   });
 
   return (
-    <div className="page-container">
+    <div className="page-container" ref={rootRef}>
+      <style>{KB_SCROLL_CSS}</style>
+
       {/* Hidden file input for single-document re-upload */}
       <input
         ref={fileInputRef}

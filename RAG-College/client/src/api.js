@@ -545,3 +545,19 @@ export async function getFeedbackLogs(params = {}) {
   }
   return data;
 }
+
+export async function updateProfile(payload) {
+  const res = await fetch(`${API_BASE}/auth/profile`, {
+    method: 'PUT',
+    headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(payload)
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    const error = new Error(data.message || 'Failed to update profile');
+    error.response = { status: res.status, data };
+    error.status = res.status;
+    throw error;
+  }
+  return data;
+}

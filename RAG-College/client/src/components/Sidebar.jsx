@@ -4,11 +4,9 @@ import {
   MessageSquare,
   Search,
   Building2,
-  Settings,
   BookOpen,
   User,
-  ChevronRight,
-  ChevronDown,
+  Settings,
   MoreHorizontal,
   Trash2,
   Pencil,
@@ -18,31 +16,12 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   LogOut,
-  LogIn,
   Users,
-  ShieldAlert
+  ShieldAlert,
+  Plus,
+  ChevronUp,
+  ChevronDown
 } from 'lucide-react';
-
-function formatRelativeTime(dateString) {
-  if (!dateString) return '';
-  const date = new Date(dateString);
-  const now = new Date();
-  const diffSec = Math.floor((now - date) / 1000);
-
-  if (diffSec < 60) return 'Just now';
-
-  const diffMin = Math.floor(diffSec / 60);
-  if (diffMin < 60) return `${diffMin} ${diffMin === 1 ? 'min' : 'mins'} ago`;
-
-  const diffHour = Math.floor(diffMin / 60);
-  if (diffHour < 24) return `${diffHour} ${diffHour === 1 ? 'hour' : 'hours'} ago`;
-
-  const diffDays = Math.floor(diffHour / 24);
-  if (diffDays === 1) return 'Yesterday';
-  if (diffDays < 7) return `${diffDays} days ago`;
-
-  return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
-}
 
 export default function Sidebar({
   activeView,
@@ -57,10 +36,7 @@ export default function Sidebar({
   onTogglePinConversation,
   searchQuery,
   setSearchQuery,
-  documentCount = 0,
-  departmentCount = 0,
   onOpenSettings,
-  onOpenDrive,
   isMobileOpen = false,
   onCloseMobile,
   isCollapsed = false,
@@ -73,15 +49,20 @@ export default function Sidebar({
   const [menuPos, setMenuPos] = useState({ top: 0, left: 0 });
   const [renamingId, setRenamingId] = useState(null);
   const [renameValue, setRenameValue] = useState('');
-  const [showSearchInput, setShowSearchInput] = useState(false);
+  const [showTopSearch, setShowTopSearch] = useState(false);
+  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+
   const searchInputRef = useRef(null);
   const menuRef = useRef(null);
+  const profileMenuRef = useRef(null);
 
-  // Close 3-dot dropdown on outside click
   useEffect(() => {
     function handleClickOutside(e) {
       if (menuRef.current && !menuRef.current.contains(e.target)) {
         setMenuOpenId(null);
+      }
+      if (profileMenuRef.current && !profileMenuRef.current.contains(e.target)) {
+        setIsProfileMenuOpen(false);
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
@@ -89,10 +70,10 @@ export default function Sidebar({
   }, []);
 
   useEffect(() => {
-    if (showSearchInput && searchInputRef.current) {
+    if (showTopSearch && searchInputRef.current) {
       searchInputRef.current.focus();
     }
-  }, [showSearchInput]);
+  }, [showTopSearch]);
 
   const filteredConversations = conversations.filter((c) =>
     (c.title || '').toLowerCase().includes((searchQuery || '').toLowerCase())
@@ -134,24 +115,34 @@ export default function Sidebar({
     return (
       <div
         key={conv.id}
-        className={`history-item ${isActive ? 'active' : ''}`}
+        style={{
+          position: 'relative',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '8.5px 12px',
+          borderRadius: '8px',
+          marginBottom: '2px',
+          cursor: 'pointer',
+          background: isActive ? 'rgba(30, 58, 138, 0.45)' : 'transparent',
+          color: isActive ? '#FFFFFF' : '#94A3B8',
+          transition: 'all 0.15s ease'
+        }}
+        className="sidebar-chat-row"
         onClick={() => {
-          if (!isEditing) {
-            handleSelectConv(conv.id);
-          }
+          if (!isEditing) handleSelectConv(conv.id);
         }}
       >
-        <div className="history-item-left">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flex: 1 }}>
           {isPinnedItem ? (
-            <Pin size={15} strokeWidth={2} className="history-chat-icon pinned" />
+            <Pin size={15} color="#38BDF8" style={{ flexShrink: 0, transform: 'rotate(45deg)' }} />
           ) : (
-            <MessageSquare size={15} strokeWidth={1.7} className="history-chat-icon" />
+            <MessageSquare size={15} style={{ flexShrink: 0, color: isActive ? '#38BDF8' : '#64748B' }} />
           )}
 
           {isEditing ? (
             <input
               type="text"
-              className="rename-input"
               value={renameValue}
               autoFocus
               onClick={(e) => e.stopPropagation()}
@@ -161,26 +152,43 @@ export default function Sidebar({
                 if (e.key === 'Enter') handleSaveRename(conv.id);
                 if (e.key === 'Escape') setRenamingId(null);
               }}
+              style={{
+                width: '100%',
+                background: '#0B132B',
+                border: '1px solid #38BDF8',
+                borderRadius: '4px',
+                color: '#FFFFFF',
+                fontSize: '13px',
+                fontWeight: 600,
+                padding: '2px 6px',
+                outline: 'none'
+              }}
             />
           ) : (
-            <div className="history-text-col">
-              <span className="history-item-title" title={conv.title || 'Untitled Conversation'}>
-                {conv.title || 'Untitled Conversation'}
-              </span>
-              <span className="history-item-time">
-                {conv.updatedAt ? formatRelativeTime(conv.updatedAt) : 'Just now'}
-              </span>
-            </div>
+            <span
+              style={{
+                fontSize: '13.5px',
+                fontWeight: isActive ? 600 : 400,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                color: isActive ? '#FFFFFF' : '#CBD5E1',
+                letterSpacing: '-0.1px'
+              }}
+              title={conv.title || 'Untitled Conversation'}
+            >
+              {conv.title || 'Untitled Conversation'}
+            </span>
           )}
         </div>
 
         {!isEditing && (
-          <div className="history-actions-wrapper" ref={menuOpenId === conv.id ? menuRef : null}>
+          <div style={{ display: 'flex', alignItems: 'center' }} ref={menuOpenId === conv.id ? menuRef : null}>
             <button
               type="button"
-              className="btn-history-menu"
-              title="Conversation options"
-              aria-label="Conversation options"
+              className="chat-row-more-btn"
+              title="Options"
+              aria-label="Options"
               onClick={(e) => {
                 e.stopPropagation();
                 if (menuOpenId === conv.id) {
@@ -188,14 +196,18 @@ export default function Sidebar({
                   return;
                 }
                 const rect = e.currentTarget.getBoundingClientRect();
-                const menuWidth = 170;
-                const menuHeight = 130;
-                const left = Math.max(8, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 8));
-                const top = rect.bottom + 6 + menuHeight > window.innerHeight
-                  ? Math.max(8, rect.top - menuHeight - 6)
-                  : rect.bottom + 6;
-                setMenuPos({ top, left });
+                setMenuPos({ top: rect.bottom + 4, left: Math.max(10, rect.right - 140) });
                 setMenuOpenId(conv.id);
+              }}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#64748B',
+                padding: '3px',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center'
               }}
             >
               <MoreHorizontal size={14} />
@@ -203,46 +215,78 @@ export default function Sidebar({
 
             {menuOpenId === conv.id && (
               <div
-                className="header-dropdown-menu history-menu-dropdown"
-                style={{ top: menuPos.top, left: menuPos.left }}
+                style={{
+                  position: 'fixed',
+                  top: menuPos.top,
+                  left: menuPos.left,
+                  width: '140px',
+                  background: '#0F1D3D',
+                  border: '1px solid rgba(255, 255, 255, 0.12)',
+                  borderRadius: '8px',
+                  boxShadow: '0 12px 30px -5px rgba(0,0,0,0.6)',
+                  padding: '4px',
+                  zIndex: 9999
+                }}
                 onClick={(e) => e.stopPropagation()}
               >
                 <div
-                  className="dropdown-option"
                   onClick={() => {
                     setMenuOpenId(null);
-                    if (onTogglePinConversation) {
-                      onTogglePinConversation(conv.id);
-                    }
+                    if (onTogglePinConversation) onTogglePinConversation(conv.id);
                   }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '7px 9px',
+                    borderRadius: '6px',
+                    fontSize: '12.5px',
+                    color: '#E2E8F0',
+                    cursor: 'pointer'
+                  }}
+                  className="dropdown-menu-item"
                 >
-                  <span className="dropdown-label-flex">
-                    {isPinned ? <PinOff size={13} /> : <Pin size={13} />}
-                    {isPinned ? 'Unpin' : 'Pin'}
-                  </span>
+                  {isPinned ? <PinOff size={13} /> : <Pin size={13} />}
+                  <span>{isPinned ? 'Unpin' : 'Pin chat'}</span>
                 </div>
 
                 <div
-                  className="dropdown-option"
                   onClick={(e) => handleStartRename(conv, e)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '7px 9px',
+                    borderRadius: '6px',
+                    fontSize: '12.5px',
+                    color: '#E2E8F0',
+                    cursor: 'pointer'
+                  }}
+                  className="dropdown-menu-item"
                 >
-                  <span className="dropdown-label-flex">
-                    <Pencil size={13} />
-                    Rename
-                  </span>
+                  <Pencil size={13} />
+                  <span>Rename</span>
                 </div>
 
                 <div
-                  className="dropdown-option danger"
                   onClick={() => {
                     setMenuOpenId(null);
                     onDeleteConversation(conv.id);
                   }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '7px 9px',
+                    borderRadius: '6px',
+                    fontSize: '12.5px',
+                    color: '#F87171',
+                    cursor: 'pointer'
+                  }}
+                  className="dropdown-menu-item danger"
                 >
-                  <span className="dropdown-label-flex danger">
-                    <Trash2 size={13} />
-                    Delete
-                  </span>
+                  <Trash2 size={13} />
+                  <span>Delete</span>
                 </div>
               </div>
             )}
@@ -254,45 +298,95 @@ export default function Sidebar({
 
   return (
     <>
-      {/* Mobile Backdrop */}
-      {isMobileOpen && (
-        <div className="sidebar-mobile-backdrop" onClick={onCloseMobile} />
-      )}
+      {isMobileOpen && <div className="sidebar-mobile-backdrop" onClick={onCloseMobile} />}
 
-      <aside className={`sidebar ${isCollapsed ? 'collapsed' : ''} ${isMobileOpen ? 'open' : ''}`}>
-        {/* Brand Header */}
-        <div className={`sidebar-brand-container ${isCollapsed ? 'collapsed' : ''}`}>
+      <aside
+        style={{
+          width: isCollapsed ? '68px' : '285px',
+          height: '100vh',
+          background: '#070E1E',
+          borderRight: '1px solid rgba(255, 255, 255, 0.07)',
+          display: 'flex',
+          flexDirection: 'column',
+          transition: 'width 0.22s cubic-bezier(0.4, 0, 0.2, 1)',
+          position: 'relative',
+          zIndex: 50,
+          userSelect: 'none'
+        }}
+        className={`sidebar ${isCollapsed ? 'collapsed' : ''} ${isMobileOpen ? 'open' : ''}`}
+      >
+        {/* 1. Header (Brand Logo, Search Icon, Collapse Icon) */}
+        <div style={{
+          padding: isCollapsed ? '18px 10px' : '18px 16px 14px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: isCollapsed ? 'center' : 'space-between'
+        }}>
           {!isCollapsed ? (
             <>
-              <div className="brand-header-left">
-                <div className="brand-icon-box" title="RAG College">
-                  <GraduationCap size={22} strokeWidth={2} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '11px' }}>
+                <div style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '10px',
+                  background: 'linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#FFFFFF',
+                  boxShadow: '0 2px 8px rgba(37, 99, 235, 0.3)'
+                }}>
+                  <GraduationCap size={20} strokeWidth={2.1} />
                 </div>
-                <div className="brand-info">
-                  <span className="brand-title">RAG College</span>
-                  <span className="brand-subtitle">Your College Knowledge Assistant</span>
+                <div>
+                  <div style={{ fontSize: '15px', fontWeight: 700, color: '#FFFFFF', letterSpacing: '-0.2px', lineHeight: 1.2 }}>
+                    College RAG
+                  </div>
+                  <div style={{ fontSize: '11.5px', color: '#64748B', fontWeight: 450 }}>
+                    Knowledge Assistant
+                  </div>
                 </div>
               </div>
-              <div className="sidebar-header-actions">
+
+              {/* Top Icons: Search & Collapse */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowTopSearch((prev) => !prev)}
+                  title="Search chats"
+                  style={{
+                    background: showTopSearch ? '#0F1A30' : 'transparent',
+                    border: 'none',
+                    color: showTopSearch ? '#38BDF8' : '#64748B',
+                    cursor: 'pointer',
+                    padding: '6px',
+                    borderRadius: '6px',
+                    display: 'flex',
+                    alignItems: 'center'
+                  }}
+                  className="sidebar-top-icon-btn"
+                >
+                  <Search size={17} />
+                </button>
+
                 {onToggleCollapse && (
                   <button
                     type="button"
-                    className="btn-sidebar-toggle"
                     onClick={onToggleCollapse}
                     title="Collapse sidebar"
-                    aria-label="Collapse sidebar"
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: '#64748B',
+                      cursor: 'pointer',
+                      padding: '6px',
+                      borderRadius: '6px',
+                      display: 'flex',
+                      alignItems: 'center'
+                    }}
+                    className="sidebar-top-icon-btn"
                   >
-                    <PanelLeftClose size={18} strokeWidth={1.9} />
-                  </button>
-                )}
-                {onCloseMobile && (
-                  <button
-                    type="button"
-                    className="btn-sidebar-mobile-close"
-                    onClick={onCloseMobile}
-                    aria-label="Close sidebar"
-                  >
-                    <X size={18} />
+                    <PanelLeftClose size={18} />
                   </button>
                 )}
               </div>
@@ -300,279 +394,431 @@ export default function Sidebar({
           ) : (
             <button
               type="button"
-              className="btn-sidebar-toggle"
               onClick={onToggleCollapse}
               title="Expand sidebar"
-              aria-label="Expand sidebar"
+              style={{ background: 'none', border: 'none', color: '#94A3B8', cursor: 'pointer', padding: '6px' }}
             >
-              <PanelLeftOpen size={18} strokeWidth={1.9} />
+              <PanelLeftOpen size={18} />
             </button>
           )}
         </div>
 
-        {/* Vertical Navigation Menu */}
-        <div className="sidebar-nav-menu">
-          {/* 1. New Chat */}
+        {/* Top Search Input Box (Shown directly below header when search icon is clicked) */}
+        {!isCollapsed && showTopSearch && (
+          <div style={{ padding: '0 14px 10px' }}>
+            <div style={{ position: 'relative' }}>
+              <input
+                ref={searchInputRef}
+                type="text"
+                placeholder="Search conversations..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                style={{
+                  width: '100%',
+                  background: '#0F1A30',
+                  border: '1px solid rgba(255, 255, 255, 0.12)',
+                  borderRadius: '7px',
+                  padding: '6px 26px 6px 10px',
+                  fontSize: '12.5px',
+                  color: '#FFFFFF',
+                  outline: 'none',
+                  boxSizing: 'border-box'
+                }}
+              />
+              {searchQuery ? (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  style={{ position: 'absolute', right: '6px', top: '7px', background: 'none', border: 'none', color: '#64748B', cursor: 'pointer' }}
+                >
+                  <X size={13} />
+                </button>
+              ) : null}
+            </div>
+          </div>
+        )}
+
+        {/* 2. New Chat Pill Button */}
+        <div style={{ padding: isCollapsed ? '10px 8px' : '0 14px 14px' }}>
           <button
             type="button"
-            className="sidebar-nav-item active-new-chat"
-            title="New Chat"
             onClick={() => {
               setActiveView('chat');
               onNewChat();
               if (onCloseMobile) onCloseMobile();
             }}
-          >
-            <MessageSquare size={17} strokeWidth={1.9} />
-            {!isCollapsed && <span>New Chat</span>}
-          </button>
-
-          {/* 2. Search */}
-          <button
-            type="button"
-            className={`sidebar-nav-item ${showSearchInput ? 'active' : ''}`}
-            title="Search chats"
-            onClick={() => {
-              if (isCollapsed && onToggleCollapse) {
-                onToggleCollapse();
-                setShowSearchInput(true);
-              } else {
-                setShowSearchInput((prev) => !prev);
-              }
+            title="Start new conversation"
+            style={{
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: isCollapsed ? 'center' : 'flex-start',
+              gap: '9px',
+              padding: isCollapsed ? '10px 0' : '9.5px 14px',
+              borderRadius: '9px',
+              background: '#0F1A30',
+              border: '1px solid rgba(255, 255, 255, 0.08)',
+              color: '#FFFFFF',
+              fontSize: '13.5px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              transition: 'all 0.15s ease'
             }}
+            className="btn-exact-new-chat"
           >
-            <Search size={17} strokeWidth={1.9} />
-            {!isCollapsed && <span>Search</span>}
-          </button>
-
-          {!isCollapsed && showSearchInput && (
-            <div className="sidebar-search-inline">
-              <input
-                ref={searchInputRef}
-                type="text"
-                className="search-input-field"
-                placeholder="Search conversations..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  className="btn-clear-search"
-                  onClick={() => setSearchQuery('')}
-                >
-                  <X size={13} />
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* 3. Knowledge Base (Admin Only) */}
-          {currentUser?.role === 'admin' && (
-            <button
-              type="button"
-              className={`sidebar-nav-item ${activeView === 'documents' ? 'active' : ''}`}
-              title="Knowledge Base"
-              onClick={() => handleNavClick('documents')}
-            >
-              <BookOpen size={17} strokeWidth={1.9} />
-              {!isCollapsed && <span>Knowledge Base</span>}
-            </button>
-          )}
-
-          {/* 4. Departments (Admin Only) */}
-          {currentUser?.role === 'admin' && (
-            <button
-              type="button"
-              className={`sidebar-nav-item ${activeView === 'departments' ? 'active' : ''}`}
-              title="Departments"
-              onClick={() => handleNavClick('departments')}
-            >
-              <Building2 size={17} strokeWidth={1.9} />
-              {!isCollapsed && <span>Departments</span>}
-            </button>
-          )}
-
-          {/* 5. Users & Staff (Admin Only) */}
-          {currentUser?.role === 'admin' && (
-            <button
-              type="button"
-              className={`sidebar-nav-item ${activeView === 'users' ? 'active' : ''}`}
-              title="Users & Staff Management"
-              onClick={() => handleNavClick('users')}
-            >
-              <Users size={17} strokeWidth={1.9} />
-              {!isCollapsed && <span>Users & Staff</span>}
-            </button>
-          )}
-
-          {/* 6. Audit Logs (Admin Only) */}
-          {currentUser?.role === 'admin' && (
-            <button
-              type="button"
-              className={`sidebar-nav-item ${activeView === 'audit-logs' ? 'active' : ''}`}
-              title="Security & Audit Logs"
-              onClick={() => handleNavClick('audit-logs')}
-            >
-              <ShieldAlert size={17} strokeWidth={1.9} />
-              {!isCollapsed && <span>Audit Logs</span>}
-            </button>
-          )}
-
-          {/* 7. Settings */}
-          <button
-            type="button"
-            className="sidebar-nav-item"
-            title="Settings"
-            onClick={() => {
-              if (onOpenSettings) onOpenSettings();
-              if (onCloseMobile) onCloseMobile();
-            }}
-          >
-            <Settings size={17} strokeWidth={1.9} />
-            {!isCollapsed && <span>Settings</span>}
+            <Plus size={16} color="#FFFFFF" strokeWidth={2.4} />
+            {!isCollapsed && <span>New chat</span>}
           </button>
         </div>
 
-        {/* Divider & Scrollable History Area */}
+        {/* 3. MANAGE Section (Admin Only) */}
+        {!isCollapsed && currentUser?.role === 'admin' && (
+          <div style={{ padding: '0 14px 16px', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+            <div style={{
+              fontSize: '11px',
+              fontWeight: 700,
+              color: '#64748B',
+              textTransform: 'uppercase',
+              letterSpacing: '0.8px',
+              padding: '0 8px 6px'
+            }}>
+              Manage
+            </div>
+
+            {/* Knowledge Base */}
+            <div
+              onClick={() => handleNavClick('documents')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                padding: '9.5px 12px',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                background: activeView === 'documents' ? 'rgba(30, 58, 138, 0.45)' : 'transparent',
+                color: activeView === 'documents' ? '#38BDF8' : '#CBD5E1',
+                borderLeft: activeView === 'documents' ? '3px solid #38BDF8' : '3px solid transparent',
+                transition: 'all 0.15s ease'
+              }}
+              className="exact-nav-link"
+            >
+              <BookOpen size={16} strokeWidth={activeView === 'documents' ? 2.2 : 1.8} />
+              <span style={{ fontSize: '13.5px', fontWeight: activeView === 'documents' ? 650 : 500 }}>
+                Knowledge Base
+              </span>
+            </div>
+
+            {/* Departments */}
+            <div
+              onClick={() => handleNavClick('departments')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                padding: '9.5px 12px',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                background: activeView === 'departments' ? 'rgba(30, 58, 138, 0.45)' : 'transparent',
+                color: activeView === 'departments' ? '#38BDF8' : '#CBD5E1',
+                borderLeft: activeView === 'departments' ? '3px solid #38BDF8' : '3px solid transparent',
+                transition: 'all 0.15s ease'
+              }}
+              className="exact-nav-link"
+            >
+              <Building2 size={16} strokeWidth={activeView === 'departments' ? 2.2 : 1.8} />
+              <span style={{ fontSize: '13.5px', fontWeight: activeView === 'departments' ? 650 : 500 }}>
+                Departments
+              </span>
+            </div>
+
+            {/* Users & Staff */}
+            <div
+              onClick={() => handleNavClick('users')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                padding: '9.5px 12px',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                background: activeView === 'users' ? 'rgba(30, 58, 138, 0.45)' : 'transparent',
+                color: activeView === 'users' ? '#38BDF8' : '#CBD5E1',
+                borderLeft: activeView === 'users' ? '3px solid #38BDF8' : '3px solid transparent',
+                transition: 'all 0.15s ease'
+              }}
+              className="exact-nav-link"
+            >
+              <Users size={16} strokeWidth={activeView === 'users' ? 2.2 : 1.8} />
+              <span style={{ fontSize: '13.5px', fontWeight: activeView === 'users' ? 650 : 500 }}>
+                Users & Staff
+              </span>
+            </div>
+
+            {/* Audit Logs */}
+            <div
+              onClick={() => handleNavClick('audit-logs')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                padding: '9.5px 12px',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                background: activeView === 'audit-logs' ? 'rgba(30, 58, 138, 0.45)' : 'transparent',
+                color: activeView === 'audit-logs' ? '#38BDF8' : '#CBD5E1',
+                borderLeft: activeView === 'audit-logs' ? '3px solid #38BDF8' : '3px solid transparent',
+                transition: 'all 0.15s ease'
+              }}
+              className="exact-nav-link"
+            >
+              <ShieldAlert size={16} strokeWidth={activeView === 'audit-logs' ? 2.2 : 1.8} />
+              <span style={{ fontSize: '13.5px', fontWeight: activeView === 'audit-logs' ? 650 : 500 }}>
+                Audit Logs
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* 4. RECENT CHATS Section (Pure list, without awkward view-all button) */}
         {!isCollapsed && (
-          <>
-            <div className="sidebar-divider-line" />
-            <div className="sidebar-scroll-area">
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, padding: '0 10px' }}>
+            <div style={{
+              padding: '6px 8px 8px',
+              fontSize: '11px',
+              fontWeight: 700,
+              color: '#64748B',
+              textTransform: 'uppercase',
+              letterSpacing: '0.8px'
+            }}>
+              Recent Chats
+            </div>
+
+            {/* Scrollable Chat List */}
+            <div
+              className="sidebar-custom-scroll-area"
+              style={{
+                flex: 1,
+                overflowY: 'auto',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '2px',
+                paddingRight: '4px'
+              }}
+            >
               {pinnedConversations.length > 0 && (
-                <div className="sidebar-section">
-                  <div className="sidebar-section-title">Pinned</div>
-                  <div className="history-list">
-                    {pinnedConversations.map((conv) => renderChatItem(conv, true))}
-                  </div>
+                <div style={{ marginBottom: '8px' }}>
+                  {pinnedConversations.map((conv) => renderChatItem(conv, true))}
                 </div>
               )}
 
-              <div className="sidebar-section">
-                <div className="sidebar-section-title">Recent Chats</div>
-                <div className="history-list">
-                  {filteredConversations.length === 0 ? (
-                    <div className="empty-history-box">
-                      <div className="empty-history-title">No conversations yet</div>
-                      <div className="empty-history-desc">
-                        Start a new conversation to ask questions about college documents.
-                      </div>
-                    </div>
-                  ) : recentConversations.length === 0 && pinnedConversations.length > 0 ? (
-                    <div className="empty-history-text">All conversations pinned above</div>
-                  ) : (
-                    recentConversations.map((conv) => renderChatItem(conv, false))
-                  )}
+              {filteredConversations.length === 0 ? (
+                <div style={{ padding: '24px 10px', textAlign: 'center', color: '#64748B', fontSize: '12.5px' }}>
+                  No conversations yet
                 </div>
-              </div>
+              ) : (
+                recentConversations.map((conv) => renderChatItem(conv, false))
+              )}
             </div>
-          </>
+          </div>
         )}
 
-        {/* Sidebar Bottom */}
-        {!isCollapsed ? (
-          <div className="sidebar-bottom-container">
-            {currentUser?.role === 'admin' && (
+        {/* 5. Bottom User Profile Card */}
+        <div
+          ref={profileMenuRef}
+          style={{
+            position: 'relative',
+            padding: isCollapsed ? '12px 8px' : '12px 14px 16px',
+            background: '#070E1E'
+          }}
+        >
+          {/* Popover Flyout Menu */}
+          {isProfileMenuOpen && currentUser && !isCollapsed && (
+            <div
+              style={{
+                position: 'absolute',
+                bottom: 'calc(100% + 4px)',
+                left: '14px',
+                right: '14px',
+                background: '#0F1A30',
+                border: '1px solid rgba(255, 255, 255, 0.12)',
+                borderRadius: '12px',
+                boxShadow: '0 16px 36px -4px rgba(0, 0, 0, 0.7)',
+                padding: '6px',
+                zIndex: 9999
+              }}
+            >
               <div
-                className="sidebar-bottom-card"
-                onClick={() => handleNavClick('documents')}
-                title="View College Knowledge Base Documents"
+                onClick={() => {
+                  setIsProfileMenuOpen(false);
+                  if (onOpenSettings) onOpenSettings('profile');
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  padding: '8px 10px',
+                  borderRadius: '7px',
+                  fontSize: '13px',
+                  fontWeight: 500,
+                  color: '#CBD5E1',
+                  cursor: 'pointer'
+                }}
+                className="dropdown-menu-item"
               >
-                <div className="sidebar-bottom-left">
-                  <div className="sidebar-bottom-icon">
-                    <BookOpen size={17} strokeWidth={1.9} />
-                  </div>
-                  <div className="sidebar-bottom-meta">
-                    <span className="bottom-meta-title">Knowledge Base</span>
-                    <span className="bottom-meta-subtitle">Documents • Drive • Departments</span>
-                  </div>
-                </div>
-                <ChevronRight size={15} className="bottom-chevron" />
+                <User size={15} color="#94A3B8" />
+                <span>Profile</span>
               </div>
-            )}
 
-            {currentUser ? (
               <div
-                className="sidebar-bottom-card student-card"
                 onClick={() => {
-                  if (onOpenSettings) onOpenSettings();
-                  if (onCloseMobile) onCloseMobile();
+                  setIsProfileMenuOpen(false);
+                  if (onOpenSettings) onOpenSettings('appearance');
                 }}
-                title={`${currentUser.name} (${currentUser.role}) • Click for settings`}
-              >
-                <div className="sidebar-bottom-left" style={{ overflow: 'hidden' }}>
-                  <div className="student-avatar-circle">
-                    <User size={15} strokeWidth={2.4} color="#172554" />
-                  </div>
-                  <div className="sidebar-bottom-meta" style={{ minWidth: 0 }}>
-                    <div className="sidebar-user-role-row">
-                      <span className="bottom-meta-title" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {currentUser.name || 'User'}
-                      </span>
-                      <span className={`role-badge ${currentUser.role === 'admin' ? 'admin' : 'user'}`}>
-                        {currentUser.role}
-                      </span>
-                    </div>
-                    <span className="bottom-meta-subtitle" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {currentUser.email}
-                    </span>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  className="sidebar-logout-btn"
-                  title="Sign out"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (onLogout) onLogout();
-                  }}
-                >
-                  <LogOut size={15} />
-                </button>
-              </div>
-            ) : (
-              <div
-                className="sidebar-login-card"
-                onClick={() => {
-                  if (onOpenAuth) onOpenAuth();
-                  if (onCloseMobile) onCloseMobile();
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  padding: '8px 10px',
+                  borderRadius: '7px',
+                  fontSize: '13px',
+                  fontWeight: 500,
+                  color: '#CBD5E1',
+                  cursor: 'pointer'
                 }}
-                title="Sign in to your account"
+                className="dropdown-menu-item"
               >
-                <LogIn size={15} />
-                <span>Sign In / Register</span>
+                <Settings size={15} color="#94A3B8" />
+                <span>Settings</span>
               </div>
-            )}
-          </div>
-        ) : (
-          <div className="sidebar-bottom-container collapsed">
-            {currentUser ? (
+
+              <div style={{ height: '1px', background: 'rgba(255, 255, 255, 0.08)', margin: '4px 0' }} />
+
               <div
-                className="sidebar-bottom-card student-card collapsed"
                 onClick={() => {
+                  setIsProfileMenuOpen(false);
                   if (onLogout) onLogout();
                 }}
-                title={`${currentUser.name} (${currentUser.role}) • Click to sign out`}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  padding: '8px 10px',
+                  borderRadius: '7px',
+                  fontSize: '13px',
+                  fontWeight: 500,
+                  color: '#F87171',
+                  cursor: 'pointer'
+                }}
+                className="dropdown-menu-item danger"
               >
-                <div className="student-avatar-circle">
-                  <User size={15} strokeWidth={2.4} color="#172554" />
+                <LogOut size={15} />
+                <span>Log out</span>
+              </div>
+            </div>
+          )}
+
+          {!isCollapsed ? (
+            currentUser ? (
+              <div
+                onClick={() => setIsProfileMenuOpen((prev) => !prev)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '9px 12px',
+                  borderRadius: '10px',
+                  background: '#0D172E',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  cursor: 'pointer',
+                  transition: 'background 0.15s ease'
+                }}
+                className="exact-bottom-profile-card"
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+                  <div style={{
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '50%',
+                    background: '#1D4ED8',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#FFFFFF',
+                    fontWeight: 700,
+                    fontSize: '12.5px',
+                    flexShrink: 0
+                  }}>
+                    {currentUser.name ? currentUser.name.slice(0, 2).toUpperCase() : 'SA'}
+                  </div>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: '13.5px', fontWeight: 600, color: '#FFFFFF', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {currentUser.name || 'System Admin'}
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#64748B' }}>
+                      {currentUser.role === 'admin' ? 'Administrator' : 'Student'}
+                    </div>
+                  </div>
                 </div>
+
+                {isProfileMenuOpen ? (
+                  <ChevronDown size={15} color="#94A3B8" />
+                ) : (
+                  <ChevronUp size={15} color="#94A3B8" />
+                )}
               </div>
             ) : (
               <div
-                className="sidebar-bottom-card student-card collapsed"
                 onClick={() => {
                   if (onOpenAuth) onOpenAuth();
+                  if (onCloseMobile) onCloseMobile();
                 }}
-                title="Sign In"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '9px 12px',
+                  borderRadius: '8px',
+                  background: '#2563EB',
+                  color: '#FFFFFF',
+                  fontSize: '13.5px',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
               >
-                <div className="student-avatar-circle">
-                  <LogIn size={15} strokeWidth={2.4} color="#172554" />
-                </div>
+                Sign In
               </div>
-            )}
-          </div>
-        )}
+            )
+          ) : (
+            <div style={{ display: 'flex', justifyContent: 'center' }}>
+              <div
+                onClick={() => {
+                  if (currentUser && onLogout) onLogout();
+                  else if (onOpenAuth) onOpenAuth();
+                }}
+                title={currentUser ? `${currentUser.name} (Click to logout)` : 'Sign In'}
+                style={{
+                  width: '34px',
+                  height: '34px',
+                  borderRadius: '50%',
+                  background: '#1D4ED8',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  color: '#FFFFFF',
+                  fontSize: '12px',
+                  fontWeight: 700
+                }}
+              >
+                {currentUser ? (
+                  currentUser.name ? currentUser.name.slice(0, 2).toUpperCase() : 'SA'
+                ) : (
+                  '?'
+                )}
+              </div>
+            </div>
+          )}
+        </div>
       </aside>
     </>
   );

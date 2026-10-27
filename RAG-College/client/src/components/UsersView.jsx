@@ -17,8 +17,299 @@ import {
   AlertCircle,
   Loader2,
   X,
-  CheckCircle2
+  CheckCircle2,
+  Eye,
+  EyeOff,
+  ChevronDown
 } from 'lucide-react';
+
+// ── Users page + Add User modal styles (kept in this file; no separate CSS needed) ──
+const MODAL_CSS = `
+/* ============================================================
+   Add User modal — scoped styles (all classes prefixed "um-")
+   ============================================================ */
+
+@keyframes um-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes um-pop  { from { opacity: 0; transform: translateY(8px) scale(.985); } to { opacity: 1; transform: none; } }
+
+.um-backdrop {
+  position: fixed; inset: 0; z-index: 1000;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, .55);
+  backdrop-filter: blur(4px);
+  animation: um-fade .15s ease;
+}
+
+.um-modal {
+  --um-primary: #2563eb;
+  --um-primary-hover: #1d4ed8;
+  --um-ring: rgba(37, 99, 235, .18);
+  --um-border: #e2e8f0;
+  --um-border-strong: #d3dbe6;
+  --um-text: #0f172a;
+  --um-label: #334155;
+  --um-muted: #64748b;
+  --um-placeholder: #94a3b8;
+  --um-subtle: #f8fafc;
+  --um-danger: #dc2626;
+  --um-danger-bg: #fef2f2;
+  --um-danger-border: #fecaca;
+  --um-success: #059669;
+  --um-success-bg: #ecfdf5;
+  --um-success-border: #a7f3d0;
+  --um-warn: #b45309;
+  --um-warn-bg: #fffbeb;
+  --um-warn-border: #fde68a;
+
+  display: flex; flex-direction: column;
+  width: 100%; max-width: 560px;
+  max-height: min(92vh, 740px);
+  background: #fff; color: var(--um-text);
+  border-radius: 16px;
+  box-shadow: 0 24px 60px -12px rgba(15, 23, 42, .35), 0 0 0 1px rgba(15, 23, 42, .06);
+  overflow: hidden;
+  animation: um-pop .18s ease;
+  transition: max-width .15s ease;
+}
+.um-modal.wide { max-width: 640px; }
+.um-modal button, .um-modal input, .um-modal select { font-family: inherit; }
+
+/* ---------- Header ---------- */
+.um-header {
+  display: flex; align-items: flex-start; gap: 14px;
+  padding: 22px 24px 18px;
+}
+.um-header-icon {
+  flex-shrink: 0; width: 42px; height: 42px; border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  background: #eff6ff; color: var(--um-primary);
+  box-shadow: inset 0 0 0 1px #dbeafe;
+}
+.um-header-text { flex: 1; min-width: 0; padding-top: 1px; }
+.um-title { margin: 0; font-size: 17px; font-weight: 650; letter-spacing: -.01em; color: var(--um-text); }
+.um-subtitle { margin: 3px 0 0; font-size: 13.5px; line-height: 1.45; color: var(--um-muted); }
+.um-close {
+  flex-shrink: 0; width: 32px; height: 32px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  border: none; background: transparent; color: var(--um-muted); cursor: pointer;
+  transition: background .12s, color .12s;
+}
+.um-close:hover:not(:disabled) { background: #f1f5f9; color: var(--um-text); }
+.um-close:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--um-ring); }
+.um-close:disabled { opacity: .4; cursor: not-allowed; }
+
+/* ---------- Tabs (segmented) ---------- */
+.um-tabs-wrap { padding: 0 24px 18px; }
+.um-tabs {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 4px;
+  padding: 4px; border-radius: 12px; background: #f1f5f9;
+}
+.um-tab {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  height: 36px; border: none; border-radius: 9px; background: transparent;
+  font-size: 13.5px; font-weight: 500; color: var(--um-muted); cursor: pointer;
+  transition: background .15s, color .15s, box-shadow .15s;
+}
+.um-tab:hover:not(:disabled):not(.active) { color: var(--um-text); }
+.um-tab.active {
+  background: #fff; color: var(--um-primary); font-weight: 600;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .08), 0 0 0 1px rgba(15, 23, 42, .04);
+}
+.um-tab:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--um-ring); }
+.um-tab:disabled { cursor: not-allowed; opacity: .6; }
+
+/* ---------- Body (scrollable) ---------- */
+.um-body {
+  flex: 1; min-height: 0; overflow-y: auto;
+  padding: 4px 24px 22px;
+  display: flex; flex-direction: column; gap: 16px;
+  border-top: 1px solid transparent;
+  scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent;
+}
+.um-body::-webkit-scrollbar { width: 8px; }
+.um-body::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 8px; border: 2px solid #fff; }
+.um-body::-webkit-scrollbar-track { background: transparent; }
+
+/* ---------- Fields ---------- */
+.um-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+@media (max-width: 520px) { .um-grid-2 { grid-template-columns: 1fr; } }
+
+.um-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.um-label { font-size: 13px; font-weight: 600; color: var(--um-label); }
+.um-label .req { color: var(--um-danger); margin-left: 2px; }
+.um-label .opt { margin-left: 6px; font-size: 12px; font-weight: 400; color: var(--um-muted); }
+.um-help { margin: 0; font-size: 12px; color: var(--um-muted); }
+
+.um-input-wrap { position: relative; display: flex; align-items: center; }
+.um-input-wrap > .um-icon {
+  position: absolute; left: 13px; color: var(--um-placeholder); pointer-events: none;
+  transition: color .12s;
+}
+.um-input-wrap:focus-within > .um-icon { color: var(--um-primary); }
+
+.um-modal .um-input {
+  width: 100%; height: 42px; padding: 0 12px 0 38px;
+  border: 1px solid var(--um-border-strong); border-radius: 10px;
+  background: #fff; color: var(--um-text); font-size: 14px;
+  appearance: none; -webkit-appearance: none; outline: none;
+  transition: border-color .12s, box-shadow .12s, background .12s;
+}
+.um-modal .um-input::placeholder { color: var(--um-placeholder); }
+.um-modal .um-input:hover:not(:disabled):not(:focus) { border-color: #b8c4d4; }
+.um-modal .um-input:focus { border-color: var(--um-primary); box-shadow: 0 0 0 3px var(--um-ring); }
+.um-modal .um-input:disabled { background: var(--um-subtle); color: var(--um-muted); cursor: not-allowed; }
+.um-modal .um-input.pr { padding-right: 42px; }
+select.um-input { cursor: pointer; text-overflow: ellipsis; }
+
+.um-trailing {
+  position: absolute; right: 6px; width: 30px; height: 30px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  border: none; background: transparent; color: var(--um-placeholder); cursor: pointer;
+  transition: background .12s, color .12s;
+}
+.um-trailing:hover { background: #f1f5f9; color: var(--um-label); }
+.um-trailing:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--um-ring); }
+.um-chevron { position: absolute; right: 13px; color: var(--um-placeholder); pointer-events: none; }
+
+/* ---------- Footer ---------- */
+.um-footer {
+  display: flex; justify-content: flex-end; align-items: center; gap: 10px;
+  padding: 14px 24px; border-top: 1px solid var(--um-border); background: var(--um-subtle);
+}
+.um-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: 40px; padding: 0 18px; border-radius: 10px;
+  font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap;
+  transition: background .12s, border-color .12s, box-shadow .12s, transform .05s;
+}
+.um-btn:active:not(:disabled) { transform: translateY(1px); }
+.um-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--um-ring); }
+.um-btn:disabled { opacity: .55; cursor: not-allowed; }
+.um-btn-ghost { background: #fff; border: 1px solid var(--um-border-strong); color: var(--um-label); }
+.um-btn-ghost:hover:not(:disabled) { background: #f1f5f9; border-color: #b8c4d4; }
+.um-btn-primary {
+  background: var(--um-primary); border: 1px solid var(--um-primary); color: #fff;
+  box-shadow: 0 1px 2px rgba(37, 99, 235, .25), inset 0 1px 0 rgba(255, 255, 255, .12);
+}
+.um-btn-primary:hover:not(:disabled) { background: var(--um-primary-hover); border-color: var(--um-primary-hover); }
+.um-btn-sm { height: 32px; padding: 0 12px; font-size: 13px; border-radius: 8px; }
+
+/* ---------- Bulk: info row ---------- */
+.um-info {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  padding: 12px 14px; border: 1px solid var(--um-border); border-radius: 12px; background: var(--um-subtle);
+}
+.um-info-text { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--um-muted); line-height: 1.4; }
+.um-info-text strong { color: var(--um-text); font-weight: 600; }
+.um-info-icon {
+  flex-shrink: 0; width: 30px; height: 30px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--um-success-bg); color: var(--um-success);
+}
+
+/* ---------- Bulk: dropzone ---------- */
+.um-dropzone {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 30px 20px; text-align: center; cursor: pointer;
+  border: 1.5px dashed #c3cddb; border-radius: 14px; background: var(--um-subtle);
+  transition: border-color .15s, background .15s;
+}
+.um-dropzone:hover, .um-dropzone.dragging { border-color: var(--um-primary); background: #f5f9ff; }
+.um-dropzone:focus-visible { outline: none; border-color: var(--um-primary); box-shadow: 0 0 0 3px var(--um-ring); }
+.um-dropzone-icon {
+  width: 48px; height: 48px; border-radius: 14px; margin-bottom: 4px;
+  display: flex; align-items: center; justify-content: center;
+  background: #fff; color: var(--um-primary);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, .1), 0 0 0 1px rgba(15, 23, 42, .05);
+}
+.um-dropzone-title { font-size: 14.5px; font-weight: 600; color: var(--um-text); }
+.um-dropzone-or { font-size: 12.5px; color: var(--um-muted); }
+.um-dropzone-formats { margin-top: 4px; font-size: 12px; color: var(--um-muted); }
+.um-sr-file { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+
+/* ---------- Bulk: file card + preview ---------- */
+.um-file {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px 14px; border: 1px solid var(--um-border); border-radius: 12px; background: #fff;
+}
+.um-file-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.um-file-name { font-size: 14px; font-weight: 600; color: var(--um-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.um-file-meta { margin-top: 1px; font-size: 12.5px; color: var(--um-muted); }
+.um-file-meta .ok { color: var(--um-success); font-weight: 600; }
+.um-file-meta .bad { color: var(--um-danger); font-weight: 600; }
+
+.um-section-label { margin: 0 0 8px; font-size: 12.5px; font-weight: 600; color: var(--um-muted); }
+.um-table-wrap { border: 1px solid var(--um-border); border-radius: 12px; overflow: hidden; overflow-x: auto; }
+.um-table { width: 100%; border-collapse: collapse; font-size: 13px; text-align: left; }
+.um-table th {
+  padding: 9px 12px; background: var(--um-subtle); border-bottom: 1px solid var(--um-border);
+  font-size: 12px; font-weight: 600; color: var(--um-muted); white-space: nowrap;
+}
+.um-table td { padding: 9px 12px; color: var(--um-muted); border-bottom: 1px solid #eef2f7; white-space: nowrap; }
+.um-table tr:last-child td { border-bottom: none; }
+.um-table td.strong { color: var(--um-text); font-weight: 500; }
+.um-more { margin-top: 6px; font-size: 12px; color: var(--um-muted); }
+
+/* ---------- Alerts ---------- */
+.um-alert {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 11px 14px; border-radius: 12px; border: 1px solid; font-size: 13px; line-height: 1.5;
+}
+.um-alert svg { flex-shrink: 0; margin-top: 2px; }
+.um-alert ul { margin: 4px 0 0 16px; padding: 0; }
+.um-alert-title { font-weight: 600; }
+.um-alert.error { background: var(--um-danger-bg); border-color: var(--um-danger-border); color: var(--um-danger); }
+.um-alert.warn { background: var(--um-warn-bg); border-color: var(--um-warn-border); color: var(--um-warn); }
+.um-alert.success { background: var(--um-success-bg); border-color: var(--um-success-border); color: var(--um-success); }
+.um-alert.info { background: #eff6ff; border-color: #bfdbfe; color: var(--um-primary-hover); }
+
+.um-progress { height: 6px; margin-top: 10px; border-radius: 6px; background: #dbeafe; overflow: hidden; }
+.um-progress > span { display: block; height: 100%; background: var(--um-primary); border-radius: 6px; transition: width .2s ease; }
+
+.um-center { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 26px 0; font-size: 13.5px; color: var(--um-muted); }
+
+@media (prefers-reduced-motion: reduce) {
+  .um-backdrop, .um-modal { animation: none; }
+  .um-modal, .um-btn, .um-tab, .um-input { transition: none; }
+}
+/* ---------- Users page: filters, table header, row actions ---------- */
+.um-filter {
+  height: 42px; padding: 0 34px 0 12px; border: 1px solid #d9e0ea; border-radius: 10px;
+  background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 10px center;
+  font: inherit; font-size: 14px; color: #334155; cursor: pointer;
+  appearance: none; -webkit-appearance: none; outline: none;
+  transition: border-color .12s, box-shadow .12s;
+}
+.um-filter:hover { border-color: #b8c4d4; }
+.um-filter:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37, 99, 235, .18); }
+.um-link-btn {
+  border: none; background: none; padding: 0 4px; font: inherit; font-size: 13px; font-weight: 600;
+  color: #2563eb; cursor: pointer;
+}
+.um-link-btn:hover { text-decoration: underline; }
+
+.um-users-table thead tr { background: var(--surface-hover, #f8fafc); border-bottom: 1px solid var(--border, #e2e8f0); }
+.um-users-table th {
+  padding: 12px 16px; text-align: left; font-size: 13px; font-weight: 600;
+  letter-spacing: 0; text-transform: none; color: #64748b;
+}
+.um-users-table th:first-child { padding-left: 20px; }
+.um-users-table th:last-child { padding-right: 20px; text-align: right; }
+
+.um-acts { display: inline-flex; align-items: center; gap: 2px; }
+.um-act {
+  width: 34px; height: 34px; border-radius: 8px; border: none; background: transparent; color: #94a3b8;
+  display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+  transition: background .12s, color .12s;
+}
+.um-act:hover { background: #f1f5f9; color: #334155; }
+.um-act.warn:hover { background: #fffbeb; color: #b45309; }
+.um-act.ok:hover { background: #ecfdf5; color: #059669; }
+.um-act.danger:hover { background: #fef2f2; color: #dc2626; }
+.um-act:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(37, 99, 235, .18); }
+
+`;
 
 // Lightweight pure-JS CSV Parser supporting quoted commas and newlines
 function parseCSV(text) {
@@ -331,6 +622,8 @@ export default function UsersView({
   currentUser
 }) {
   const [search, setSearch] = useState('');
+  const [roleFilter, setRoleFilter] = useState('all'); // 'all' | 'user' | 'admin'
+  const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'active' | 'suspended'
   const [showAddModal, setShowAddModal] = useState(false);
   const [modalTab, setModalTab] = useState('single'); // 'single' | 'bulk'
 
@@ -343,6 +636,7 @@ export default function UsersView({
     departmentId: ''
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   // Bulk Import State
   const [isDragging, setIsDragging] = useState(false);
@@ -358,6 +652,7 @@ export default function UsersView({
   const handleCloseModal = () => {
     setShowAddModal(false);
     setFormData({ name: '', email: '', password: '', role: 'user', departmentId: '' });
+    setShowPassword(false);
     setSelectedFile(null);
     setParsedUsers([]);
     setParseErrors([]);
@@ -377,10 +672,16 @@ export default function UsersView({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [showAddModal, isSubmitting, isImporting]);
 
-  const filteredUsers = users.filter((u) =>
-    (u.name || '').toLowerCase().includes(search.toLowerCase()) ||
-    (u.email || '').toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredUsers = users.filter((u) => {
+    const q = search.toLowerCase();
+    const matchesSearch =
+      (u.name || '').toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q);
+    const matchesRole = roleFilter === 'all' || (u.role === 'admin' ? 'admin' : 'user') === roleFilter;
+    const userActive = (u.status || 'active') === 'active';
+    const matchesStatus = statusFilter === 'all' || (statusFilter === 'active') === userActive;
+    return matchesSearch && matchesRole && matchesStatus;
+  });
+  const hasActiveFilters = search !== '' || roleFilter !== 'all' || statusFilter !== 'all';
 
   const handleSingleSubmit = async (e) => {
     e.preventDefault();
@@ -514,9 +815,13 @@ export default function UsersView({
     }
   };
 
+  const busy = isSubmitting || isImporting;
+
   return (
     <div className="page-container">
-      {/* â”€â”€ Page Header â”€â”€ */}
+      <style>{MODAL_CSS}</style>
+
+      {/* ── Page Header ── */}
       <div className="page-header-row">
         <div>
           <h1 className="page-title">Users &amp; Staff</h1>
@@ -532,7 +837,7 @@ export default function UsersView({
         </button>
       </div>
 
-      {/* â”€â”€ Filter / Search Bar â”€â”€ */}
+      {/* ── Filter / Search Bar ── */}
       <div className="filter-bar">
         <div className="filter-search-box">
           <Search size={15} className="search-icon-muted" />
@@ -544,13 +849,33 @@ export default function UsersView({
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        {search && (
+        <select
+          className="um-filter"
+          value={roleFilter}
+          onChange={(e) => setRoleFilter(e.target.value)}
+          aria-label="Filter by role"
+        >
+          <option value="all">All roles</option>
+          <option value="user">Staff</option>
+          <option value="admin">Admin</option>
+        </select>
+        <select
+          className="um-filter"
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          aria-label="Filter by status"
+        >
+          <option value="all">All status</option>
+          <option value="active">Active</option>
+          <option value="suspended">Suspended</option>
+        </select>
+        {hasActiveFilters && (
           <button
             type="button"
-            onClick={() => setSearch('')}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: '13px', padding: '0 4px' }}
+            className="um-link-btn"
+            onClick={() => { setSearch(''); setRoleFilter('all'); setStatusFilter('all'); }}
           >
-            Clear
+            Clear filters
           </button>
         )}
         <span style={{ fontSize: '13px', color: 'var(--text-secondary)', marginLeft: 'auto' }}>
@@ -558,7 +883,7 @@ export default function UsersView({
         </span>
       </div>
 
-      {/* â”€â”€ Users Table â”€â”€ */}
+      {/* ── Users Table ── */}
       {isLoading ? (
         <div className="empty-placeholder">
           <Loader2 size={26} className="spin icon-brand-wine" />
@@ -594,24 +919,14 @@ export default function UsersView({
       ) : (
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden', boxShadow: 'var(--shadow-xs)' }}>
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', minWidth: '680px', borderCollapse: 'collapse', fontSize: '14px', textAlign: 'left' }}>
+            <table className="um-users-table" style={{ width: '100%', minWidth: '680px', borderCollapse: 'collapse', fontSize: '14px', textAlign: 'left' }}>
               <thead>
-                <tr style={{ background: 'var(--surface-hover)', borderBottom: '1px solid var(--border)' }}>
-                  <th style={{ padding: '11px 20px', fontWeight: 600, fontSize: '11.5px', letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
-                    User / Staff
-                  </th>
-                  <th style={{ padding: '11px 16px', fontWeight: 600, fontSize: '11.5px', letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
-                    Role
-                  </th>
-                  <th style={{ padding: '11px 16px', fontWeight: 600, fontSize: '11.5px', letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
-                    Department
-                  </th>
-                  <th style={{ padding: '11px 16px', fontWeight: 600, fontSize: '11.5px', letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
-                    Status
-                  </th>
-                  <th style={{ padding: '11px 20px', fontWeight: 600, fontSize: '11.5px', letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--text-secondary)', textAlign: 'right' }}>
-                    Actions
-                  </th>
+                <tr>
+                  <th>User</th>
+                  <th>Role</th>
+                  <th>Department</th>
+                  <th>Status</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -685,24 +1000,24 @@ export default function UsersView({
                       {/* Actions */}
                       <td style={{ padding: '13px 20px', textAlign: 'right' }}>
                         {!isCurrent ? (
-                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                          <div className="um-acts">
                             <button
                               type="button"
-                              className="btn-card-action"
-                              title={isActive ? 'Suspend User' : 'Activate User'}
-                              aria-label={isActive ? 'Suspend User' : 'Activate User'}
+                              className={`um-act ${isActive ? 'warn' : 'ok'}`}
+                              title={isActive ? 'Suspend user' : 'Activate user'}
+                              aria-label={isActive ? 'Suspend user' : 'Activate user'}
                               onClick={() => onToggleStatus(u._id, isActive ? 'suspended' : 'active')}
                             >
-                              <Power size={14} style={{ color: isActive ? 'var(--danger)' : 'var(--status-ready)' }} />
+                              <Power size={15} />
                             </button>
                             <button
                               type="button"
-                              className="btn-card-action danger"
-                              title="Delete User"
-                              aria-label="Delete User"
+                              className="um-act danger"
+                              title="Delete user"
+                              aria-label="Delete user"
                               onClick={() => onDeleteUser(u)}
                             >
-                              <Trash2 size={14} />
+                              <Trash2 size={15} />
                             </button>
                           </div>
                         ) : (
@@ -720,71 +1035,82 @@ export default function UsersView({
         </div>
       )}
 
-      {/* â”€â”€ Add User Modal â”€â”€ */}
+      {/* ── Add User Modal (redesigned) ── */}
       {showAddModal && (
-        <div className="modal-backdrop" onClick={() => { if (!isSubmitting && !isImporting) handleCloseModal(); }}>
+        <div className="um-backdrop" onClick={() => { if (!busy) handleCloseModal(); }}>
           <div
-            className="modal-container"
+            className={`um-modal${modalTab === 'bulk' ? ' wide' : ''}`}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="um-title"
             onClick={(e) => e.stopPropagation()}
-            style={{ width: modalTab === 'bulk' ? '600px' : '500px', transition: 'width 0.15s ease' }}
           >
-            {/* Modal Header */}
-            <div className="modal-header-row">
-              <div className="modal-header-text">
-                <p className="modal-header-title">Add College User / Staff</p>
-                <p className="modal-header-subtitle">
+            {/* Header */}
+            <div className="um-header">
+              <div className="um-header-icon">
+                <UserPlus size={20} strokeWidth={2} />
+              </div>
+              <div className="um-header-text">
+                <h2 className="um-title" id="um-title">Add college user</h2>
+                <p className="um-subtitle">
                   {modalTab === 'single'
-                    ? 'Create an individual account with a designated department and role.'
+                    ? 'Create an account with a department and role.'
                     : 'Upload a spreadsheet to import multiple accounts at once.'}
                 </p>
               </div>
               <button
                 type="button"
-                className="btn-modal-close-icon"
+                className="um-close"
                 onClick={handleCloseModal}
-                disabled={isSubmitting || isImporting}
+                disabled={busy}
                 aria-label="Close"
               >
-                <X size={16} />
+                <X size={18} />
               </button>
             </div>
 
-            {/* Tab Switcher */}
-            <div style={{ padding: '0 24px 4px' }}>
-              <div className="auth-segmented-pill">
+            {/* Tabs */}
+            <div className="um-tabs-wrap">
+              <div className="um-tabs" role="tablist">
                 <button
                   type="button"
-                  className={`auth-pill-btn ${modalTab === 'single' ? 'active' : ''}`}
+                  role="tab"
+                  aria-selected={modalTab === 'single'}
+                  className={`um-tab ${modalTab === 'single' ? 'active' : ''}`}
                   onClick={() => { setModalTab('single'); setBulkError(''); }}
-                  disabled={isSubmitting || isImporting}
+                  disabled={busy}
                 >
-                  <User size={13} />
-                  <span>Single User</span>
+                  <User size={15} />
+                  <span>Single user</span>
                 </button>
                 <button
                   type="button"
-                  className={`auth-pill-btn ${modalTab === 'bulk' ? 'active' : ''}`}
+                  role="tab"
+                  aria-selected={modalTab === 'bulk'}
+                  className={`um-tab ${modalTab === 'bulk' ? 'active' : ''}`}
                   onClick={() => { setModalTab('bulk'); setBulkError(''); }}
-                  disabled={isSubmitting || isImporting}
+                  disabled={busy}
                 >
-                  <FileSpreadsheet size={13} />
-                  <span>Bulk Import (Excel / CSV)</span>
+                  <FileSpreadsheet size={15} />
+                  <span>Bulk import</span>
                 </button>
               </div>
             </div>
 
-            {/* â”€â”€ TAB 1: Single User â”€â”€ */}
+            {/* ── TAB 1: Single User ── */}
             {modalTab === 'single' && (
               <form onSubmit={handleSingleSubmit} style={{ display: 'contents' }}>
-                <div className="modal-content-body">
-                  <div className="form-field-group">
-                    <label className="field-label">Full Name *</label>
-                    <div className="auth-field-input-box">
-                      <User size={14} className="auth-field-icon" />
+                <div className="um-body">
+                  <div className="um-field">
+                    <label className="um-label" htmlFor="um-name">Full name<span className="req">*</span></label>
+                    <div className="um-input-wrap">
+                      <User size={16} className="um-icon" />
                       <input
+                        id="um-name"
                         type="text"
                         required
-                        className="auth-field-input"
+                        autoFocus
+                        className="um-input"
                         value={formData.name}
                         onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                         placeholder="Prof. John Doe"
@@ -793,14 +1119,15 @@ export default function UsersView({
                     </div>
                   </div>
 
-                  <div className="form-field-group">
-                    <label className="field-label">College Email *</label>
-                    <div className="auth-field-input-box">
-                      <Mail size={14} className="auth-field-icon" />
+                  <div className="um-field">
+                    <label className="um-label" htmlFor="um-email">College email<span className="req">*</span></label>
+                    <div className="um-input-wrap">
+                      <Mail size={16} className="um-icon" />
                       <input
+                        id="um-email"
                         type="email"
                         required
-                        className="auth-field-input"
+                        className="um-input"
                         value={formData.email}
                         onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                         placeholder="john@college.edu"
@@ -809,109 +1136,122 @@ export default function UsersView({
                     </div>
                   </div>
 
-                  <div className="form-field-group">
-                    <label className="field-label">Initial Password (Optional)</label>
-                    <div className="auth-field-input-box">
-                      <Lock size={14} className="auth-field-icon" />
+                  <div className="um-field">
+                    <label className="um-label" htmlFor="um-password">
+                      Initial password<span className="opt">Optional</span>
+                    </label>
+                    <div className="um-input-wrap">
+                      <Lock size={16} className="um-icon" />
                       <input
-                        type="password"
-                        className="auth-field-input"
+                        id="um-password"
+                        type={showPassword ? 'text' : 'password'}
+                        className="um-input pr"
                         value={formData.password}
                         onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                        placeholder="Min. 6 characters"
+                        placeholder="Minimum 6 characters"
+                        autoComplete="new-password"
                         disabled={isSubmitting}
                       />
+                      <button
+                        type="button"
+                        className="um-trailing"
+                        onClick={() => setShowPassword((s) => !s)}
+                        aria-label={showPassword ? 'Hide password' : 'Show password'}
+                        tabIndex={-1}
+                      >
+                        {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
                     </div>
                   </div>
 
-                  <div className="form-field-group">
-                    <label className="field-label">Role</label>
-                    <select
-                      className="field-input"
-                      value={formData.role}
-                      onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                      disabled={isSubmitting}
-                    >
-                      <option value="user">Teacher / Staff (User)</option>
-                      <option value="admin">Administrator (Admin)</option>
-                    </select>
-                  </div>
+                  <div className="um-grid-2">
+                    <div className="um-field">
+                      <label className="um-label" htmlFor="um-role">Role</label>
+                      <div className="um-input-wrap">
+                        <Shield size={16} className="um-icon" />
+                        <select
+                          id="um-role"
+                          className="um-input pr"
+                          value={formData.role}
+                          onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                          disabled={isSubmitting}
+                        >
+                          <option value="user">Teacher / Staff</option>
+                          <option value="admin">Administrator</option>
+                        </select>
+                        <ChevronDown size={16} className="um-chevron" />
+                      </div>
+                    </div>
 
-                  <div className="form-field-group">
-                    <label className="field-label">Department</label>
-                    <select
-                      className="field-input"
-                      value={formData.departmentId}
-                      onChange={(e) => setFormData({ ...formData, departmentId: e.target.value })}
-                      disabled={isSubmitting}
-                    >
-                      <option value="">All / General Access</option>
-                      {departments.map((d) => (
-                        <option key={d._id} value={d._id}>
-                          {d.name} ({d.code})
-                        </option>
-                      ))}
-                    </select>
+                    <div className="um-field">
+                      <label className="um-label" htmlFor="um-dept">Department</label>
+                      <div className="um-input-wrap">
+                        <Building2 size={16} className="um-icon" />
+                        <select
+                          id="um-dept"
+                          className="um-input pr"
+                          value={formData.departmentId}
+                          onChange={(e) => setFormData({ ...formData, departmentId: e.target.value })}
+                          disabled={isSubmitting}
+                        >
+                          <option value="">All / General</option>
+                          {departments.map((d) => (
+                            <option key={d._id} value={d._id}>
+                              {d.name} ({d.code})
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronDown size={16} className="um-chevron" />
+                      </div>
+                    </div>
                   </div>
                 </div>
 
-                <div className="modal-footer-actions">
+                <div className="um-footer">
                   <button
                     type="button"
-                    className="btn-secondary-action"
+                    className="um-btn um-btn-ghost"
                     onClick={handleCloseModal}
                     disabled={isSubmitting}
                   >
                     Cancel
                   </button>
-                  <button
-                    type="submit"
-                    className="btn-primary-action"
-                    disabled={isSubmitting}
-                  >
+                  <button type="submit" className="um-btn um-btn-primary" disabled={isSubmitting}>
                     {isSubmitting ? (
                       <>
-                        <Loader2 size={14} className="spin" />
-                        <span>Creating...</span>
+                        <Loader2 size={15} className="spin" />
+                        <span>Creating…</span>
                       </>
                     ) : (
-                      <span>Create User</span>
+                      <span>Create user</span>
                     )}
                   </button>
                 </div>
               </form>
             )}
 
-            {/* â”€â”€ TAB 2: Bulk Import â”€â”€ */}
+            {/* ── TAB 2: Bulk Import ── */}
             {modalTab === 'bulk' && (
               <>
-                <div className="modal-content-body">
-                  {/* Template Download Row */}
-                  <div style={{
-                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                    padding: '10px 14px', borderRadius: 'var(--radius-sm)',
-                    background: 'var(--surface-hover)', border: '1px solid var(--border)',
-                    flexWrap: 'wrap', gap: '8px'
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--text-secondary)' }}>
-                      <FileSpreadsheet size={15} style={{ color: 'var(--status-ready)', flexShrink: 0 }} />
-                      <span>Required columns: <strong style={{ color: 'var(--text)' }}>Name, Email</strong>, Password, Role, Department</span>
+                <div className="um-body">
+                  {/* Template row */}
+                  <div className="um-info">
+                    <div className="um-info-text">
+                      <span className="um-info-icon"><FileSpreadsheet size={16} /></span>
+                      <span>
+                        Required columns: <strong>Name, Email</strong>. Optional: Password, Role, Department.
+                      </span>
                     </div>
-                    <button
-                      type="button"
-                      className="btn-secondary-action"
-                      onClick={handleDownloadTemplate}
-                      style={{ height: '34px', padding: '0 14px', fontSize: '13px' }}
-                    >
-                      <Download size={13} />
-                      <span>Sample Template</span>
+                    <button type="button" className="um-btn um-btn-ghost um-btn-sm" onClick={handleDownloadTemplate}>
+                      <Download size={14} />
+                      <span>Sample template</span>
                     </button>
                   </div>
 
-                  {/* Drag-and-Drop Area â€” only when no file selected */}
+                  {/* Dropzone */}
                   {!selectedFile && (
                     <div
-                      className={`upload-dropzone${isDragging ? ' dragging' : ''}`}
+                      className={`um-dropzone${isDragging ? ' dragging' : ''}`}
                       onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
                       onDragLeave={() => setIsDragging(false)}
                       onDrop={(e) => {
@@ -932,60 +1272,51 @@ export default function UsersView({
                         ref={fileInputRef}
                         type="file"
                         accept=".csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
-                        className="upload-file-input"
+                        className="um-sr-file"
                         onChange={(e) => {
                           if (e.target.files && e.target.files[0]) handleFileProcess(e.target.files[0]);
                         }}
                         tabIndex={-1}
                       />
-                      <div className="upload-dropzone-icon">
-                        <UploadCloud size={28} strokeWidth={1.8} />
+                      <div className="um-dropzone-icon">
+                        <UploadCloud size={24} strokeWidth={1.8} />
                       </div>
-                      <div className="upload-dropzone-title">
-                        {isDragging ? 'Drop your file here' : 'Drag & drop your spreadsheet here'}
+                      <div className="um-dropzone-title">
+                        {isDragging ? 'Drop your file here' : 'Drag and drop your spreadsheet'}
                       </div>
-                      <div className="upload-dropzone-divider"><span>or</span></div>
+                      <div className="um-dropzone-or">or</div>
                       <button
                         type="button"
-                        className="upload-choose-file-btn"
+                        className="um-btn um-btn-ghost um-btn-sm"
                         onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
                       >
-                        Browse File
+                        Browse files
                       </button>
-                      <div className="upload-dropzone-formats">XLSX â€¢ CSV</div>
+                      <div className="um-dropzone-formats">Supports .xlsx and .csv</div>
                     </div>
                   )}
 
-                  {/* Parsing Spinner */}
+                  {/* Parsing */}
                   {isParsing && (
-                    <div className="empty-placeholder" style={{ padding: '24px' }}>
-                      <Loader2 size={22} className="spin icon-brand-wine" />
-                      <div style={{ fontSize: '13.5px', color: 'var(--text-secondary)', marginTop: '8px' }}>Reading spreadsheet rows...</div>
+                    <div className="um-center">
+                      <Loader2 size={22} className="spin" style={{ color: 'var(--um-primary, #2563eb)' }} />
+                      <span>Reading spreadsheet rows…</span>
                     </div>
                   )}
 
-                  {/* Selected File Card + Preview */}
+                  {/* File card + preview */}
                   {selectedFile && !isParsing && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      {/* File info row */}
-                      <div style={{
-                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                        padding: '10px 14px', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
-                        background: 'var(--surface)'
-                      }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          <div style={{
-                            width: '34px', height: '34px', borderRadius: 'var(--radius-sm)',
-                            background: 'var(--status-ready-bg)', color: 'var(--status-ready)',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
-                          }}>
-                            <FileSpreadsheet size={17} />
-                          </div>
-                          <div>
-                            <div style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text)' }}>{selectedFile.name}</div>
-                            <div style={{ fontSize: '12.5px', color: 'var(--text-secondary)', marginTop: '1px' }}>
-                              {selectedFile.size} &nbsp;Â·&nbsp;
-                              <span style={{ color: parsedUsers.length > 0 ? 'var(--status-ready)' : 'var(--danger)', fontWeight: 600 }}>
+                    <>
+                      <div className="um-file">
+                        <div className="um-file-left">
+                          <span className="um-info-icon" style={{ width: 36, height: 36, borderRadius: 10 }}>
+                            <FileSpreadsheet size={18} />
+                          </span>
+                          <div style={{ minWidth: 0 }}>
+                            <div className="um-file-name">{selectedFile.name}</div>
+                            <div className="um-file-meta">
+                              {selectedFile.size} &nbsp;·&nbsp;{' '}
+                              <span className={parsedUsers.length > 0 ? 'ok' : 'bad'}>
                                 {parsedUsers.length} {parsedUsers.length === 1 ? 'user' : 'users'} ready to import
                               </span>
                             </div>
@@ -994,8 +1325,9 @@ export default function UsersView({
                         {!isImporting && (
                           <button
                             type="button"
-                            className="btn-remove-staged"
+                            className="um-close"
                             title="Remove file"
+                            aria-label="Remove file"
                             onClick={() => {
                               setSelectedFile(null);
                               setParsedUsers([]);
@@ -1005,120 +1337,112 @@ export default function UsersView({
                               if (fileInputRef.current) fileInputRef.current.value = '';
                             }}
                           >
-                            <X size={14} />
+                            <X size={16} />
                           </button>
                         )}
                       </div>
 
-                      {/* Preview table */}
                       {parsedUsers.length > 0 && (
                         <div>
-                          <div style={{ fontSize: '11.5px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-secondary)', marginBottom: '6px' }}>
-                            Preview â€” first {Math.min(5, parsedUsers.length)} of {parsedUsers.length} rows
-                          </div>
-                          <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
-                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', textAlign: 'left' }}>
+                          <p className="um-section-label">
+                            Preview: first {Math.min(5, parsedUsers.length)} of {parsedUsers.length} rows
+                          </p>
+                          <div className="um-table-wrap">
+                            <table className="um-table">
                               <thead>
-                                <tr style={{ background: 'var(--surface-hover)', borderBottom: '1px solid var(--border)' }}>
+                                <tr>
                                   {['Name', 'Email', 'Role', 'Department'].map((h) => (
-                                    <th key={h} style={{ padding: '7px 10px', fontWeight: 600, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-secondary)' }}>
-                                      {h}
-                                    </th>
+                                    <th key={h}>{h}</th>
                                   ))}
                                 </tr>
                               </thead>
                               <tbody>
                                 {parsedUsers.slice(0, 5).map((row, idx) => (
-                                  <tr key={idx} style={{ borderBottom: idx < Math.min(parsedUsers.length, 5) - 1 ? '1px solid var(--border)' : 'none' }}>
-                                    <td style={{ padding: '7px 10px', fontWeight: 500, color: 'var(--text)' }}>{row.name}</td>
-                                    <td style={{ padding: '7px 10px', color: 'var(--text-secondary)' }}>{row.email}</td>
-                                    <td style={{ padding: '7px 10px' }}>
+                                  <tr key={idx}>
+                                    <td className="strong">{row.name}</td>
+                                    <td>{row.email}</td>
+                                    <td>
                                       <span className={`role-badge ${row.role === 'admin' ? 'admin' : 'user'}`}>
-                                        {row.role}
+                                        {row.role === 'admin' ? 'Admin' : 'Staff'}
                                       </span>
                                     </td>
-                                    <td style={{ padding: '7px 10px', color: 'var(--text-secondary)' }}>{row.departmentDisplay}</td>
+                                    <td>{row.departmentDisplay}</td>
                                   </tr>
                                 ))}
                               </tbody>
                             </table>
                           </div>
                           {parsedUsers.length > 5 && (
-                            <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px', fontStyle: 'italic' }}>
-                              + {parsedUsers.length - 5} more users will be imported
-                            </div>
+                            <div className="um-more">+ {parsedUsers.length - 5} more users will be imported</div>
                           )}
                         </div>
                       )}
-                    </div>
+                    </>
                   )}
 
-                  {/* Skipped row warnings */}
+                  {/* Skipped rows */}
                   {parseErrors.length > 0 && (
-                    <div style={{
-                      background: 'var(--status-processing-bg)', border: '1px solid var(--status-processing-border)',
-                      borderRadius: 'var(--radius-sm)', padding: '10px 14px', fontSize: '13px', color: 'var(--status-processing)'
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600, marginBottom: '4px' }}>
-                        <AlertCircle size={13} />
-                        <span>{parseErrors.length} row{parseErrors.length > 1 ? 's' : ''} skipped</span>
+                    <div className="um-alert warn">
+                      <AlertCircle size={15} />
+                      <div>
+                        <div className="um-alert-title">
+                          {parseErrors.length} row{parseErrors.length > 1 ? 's' : ''} skipped
+                        </div>
+                        <ul>
+                          {parseErrors.slice(0, 3).map((err, i) => <li key={i}>{err}</li>)}
+                          {parseErrors.length > 3 && <li>…and {parseErrors.length - 3} more</li>}
+                        </ul>
                       </div>
-                      <ul style={{ margin: '0 0 0 18px', padding: 0, lineHeight: 1.6 }}>
-                        {parseErrors.slice(0, 3).map((err, i) => <li key={i}>{err}</li>)}
-                        {parseErrors.length > 3 && <li>â€¦and {parseErrors.length - 3} more</li>}
-                      </ul>
                     </div>
                   )}
 
                   {/* File error */}
                   {bulkError && (
-                    <div style={{
-                      display: 'flex', alignItems: 'flex-start', gap: '8px',
-                      background: 'var(--danger-light)', border: '1px solid var(--danger-border)',
-                      borderRadius: 'var(--radius-sm)', padding: '10px 14px', fontSize: '13.5px', color: 'var(--danger)'
-                    }}>
-                      <AlertCircle size={14} style={{ flexShrink: 0, marginTop: '1px' }} />
+                    <div className="um-alert error">
+                      <AlertCircle size={15} />
                       <span>{bulkError}</span>
                     </div>
                   )}
 
                   {/* Import progress / result */}
                   {importStatus && (
-                    <div style={{
-                      background: importStatus.failed > 0 ? 'var(--danger-light)' : 'var(--status-ready-bg)',
-                      border: `1px solid ${importStatus.failed > 0 ? 'var(--danger-border)' : 'var(--status-ready-border)'}`,
-                      borderRadius: 'var(--radius-sm)', padding: '12px 14px'
-                    }}>
-                      {isImporting ? (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13.5px', color: 'var(--text)' }}>
-                          <Loader2 size={15} className="spin" style={{ color: 'var(--primary)', flexShrink: 0 }} />
-                          <span>Importing {importStatus.current} of {importStatus.total} ({importStatus.userEmail})â€¦</span>
+                    isImporting ? (
+                      <div className="um-alert info" style={{ display: 'block' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <Loader2 size={15} className="spin" style={{ marginTop: 0 }} />
+                          <span>
+                            Importing {importStatus.current} of {importStatus.total}
+                            {importStatus.userEmail ? ` (${importStatus.userEmail})` : ''}…
+                          </span>
                         </div>
-                      ) : (
+                        <div className="um-progress">
+                          <span style={{ width: `${(importStatus.current / importStatus.total) * 100}%` }} />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className={`um-alert ${importStatus.failed > 0 ? 'error' : 'success'}`}>
+                        <CheckCircle2 size={15} />
                         <div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600, fontSize: '13.5px', color: importStatus.failed > 0 ? 'var(--danger)' : 'var(--status-ready)' }}>
-                            <CheckCircle2 size={15} />
-                            <span>
-                              {importStatus.success} created successfully
-                              {importStatus.failed > 0 && ` Â· ${importStatus.failed} failed`}
-                            </span>
+                          <div className="um-alert-title">
+                            {importStatus.success} created successfully
+                            {importStatus.failed > 0 && `, ${importStatus.failed} failed`}
                           </div>
                           {importStatus.errors && importStatus.errors.length > 0 && (
-                            <ul style={{ margin: '6px 0 0 18px', padding: 0, fontSize: '12.5px', color: 'var(--danger)', lineHeight: 1.6 }}>
+                            <ul>
                               {importStatus.errors.slice(0, 4).map((err, idx) => <li key={idx}>{err}</li>)}
-                              {importStatus.errors.length > 4 && <li>â€¦and {importStatus.errors.length - 4} more</li>}
+                              {importStatus.errors.length > 4 && <li>…and {importStatus.errors.length - 4} more</li>}
                             </ul>
                           )}
                         </div>
-                      )}
-                    </div>
+                      </div>
+                    )
                   )}
                 </div>
 
-                <div className="modal-footer-actions">
+                <div className="um-footer">
                   <button
                     type="button"
-                    className="btn-secondary-action"
+                    className="um-btn um-btn-ghost"
                     onClick={handleCloseModal}
                     disabled={isImporting}
                   >
@@ -1126,19 +1450,19 @@ export default function UsersView({
                   </button>
                   <button
                     type="button"
-                    className="btn-primary-action"
+                    className="um-btn um-btn-primary"
                     onClick={handleBulkImport}
                     disabled={parsedUsers.length === 0 || isImporting}
                   >
                     {isImporting ? (
                       <>
-                        <Loader2 size={14} className="spin" />
-                        <span>Importing ({importStatus?.current || 0}/{parsedUsers.length})â€¦</span>
+                        <Loader2 size={15} className="spin" />
+                        <span>Importing ({importStatus?.current || 0}/{parsedUsers.length})…</span>
                       </>
                     ) : (
                       <>
-                        <Check size={14} />
-                        <span>Import {parsedUsers.length > 0 ? `${parsedUsers.length} Users` : 'Users'}</span>
+                        <Check size={15} />
+                        <span>Import {parsedUsers.length > 0 ? `${parsedUsers.length} users` : 'users'}</span>
                       </>
                     )}
                   </button>

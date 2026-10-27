@@ -170,3 +170,95 @@ exports.getMe = async (req, res) => {
     return res.status(500).json({ success: false, message: error.message });
   }
 };
+
+// PUT /api/auth/profile
+exports.updateProfile = async (req, res) => {
+  try {
+    const userId = req.user.id || req.user._id;
+    const { name, currentPassword, newPassword } = req.body;
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Name update
+    if (name && name.trim()) {
+      user.name = name.trim();
+    }
+
+    // Password change logic
+    if (newPassword) {
+      if (!currentPassword) {
+        return res.status(400).json({
+          success: false,
+          message: 'Current password is required to set a new password'
+        });
+      }
+
+      if (!user.passwordHash) {
+        return res.status(400).json({
+          success: false,
+          message: 'No existing password found to verify'
+        });
+      }
+
+      const isMatch = await bcrypt.compare(currentPassword, user.passwordHash);
+      if (!isMatch) {
+        return res.status(400).json({
+          success: false,
+          message: 'Current password does not match'
+        });
+      }
+
+      if (newPassword.length < 6) {
+        return res.status(400).json({
+          success: false,
+          message: 'New password must be at least 6 characters long'
+        });
+      }
+
+      const salt = await bcrypt.genSalt(10);
+      user.passwordHash = await bcrypt.hash(newPassword, salt);
+    }
+
+    // Email is strictly locked and cannot be changed
+    await user.save();
+
+    // Log the update action
+    logAction({
+      req: { ...req, user },
+      action: 'USER_UPDATE',
+      resourceType: 'User',
+      resourceId: user._id,
+      details: {
+        email: user.email,
+        name: user.name,
+        passwordChanged: Boolean(newPassword)
+      }
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Profile updated successfully',
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        departmentId: user.departmentId,
+        departmentIds: user.departmentIds,
+        status: user.status
+      }
+    });
+  } catch (error) {
+    console.error('Update profile error:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Server error while updating profile'
+    });
+  }
+};

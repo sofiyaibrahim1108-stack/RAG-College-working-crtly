@@ -23,7 +23,8 @@ import {
   fetchUsers,
   createUserRecord,
   toggleUserStatusRecord,
-  deleteUserRecord
+  deleteUserRecord,
+  updateProfile
 } from './api';
 import { Pencil, AlertCircle, RotateCcw, Loader2 } from 'lucide-react';
 import { getFriendlyErrorMessage } from './utils/errorHandler';
@@ -214,7 +215,7 @@ export default function App() {
     } catch {
       // fallback
     }
-    return 'light';
+    return 'dark';
   });
 
   useEffect(() => {
@@ -271,14 +272,14 @@ export default function App() {
   const [isAuthChecking, setIsAuthChecking] = useState(true);
   const [showAuthModal, setShowAuthModal] = useState(false);
 
-  // Active Chat State with Ref-backed department synchronization
+  // Active Chat State
   const [activeConvId, setActiveConvId] = useState('session-default');
   const [messages, setMessages] = useState([]);
   const [inputQuery, setInputQuery] = useState('');
   const [editingMessage, setEditingMessage] = useState(null);
   const [isSending, setIsSending] = useState(false);
   const [regeneratingId, setRegeneratingId] = useState(null);
-  
+
   const [selectedDepartmentId, setSelectedDepartmentId] = useState(null);
   const selectedDepartmentIdRef = useRef(null);
 
@@ -317,7 +318,6 @@ export default function App() {
   const pollingTimerRef = useRef(null);
   const isPollingRef = useRef(false);
 
-  // Sync activeConvId per logged-in user in localStorage
   useEffect(() => {
     activeConvIdRef.current = activeConvId;
     if (currentUser) {
@@ -362,6 +362,8 @@ export default function App() {
   const [showDeptModal, setShowDeptModal] = useState(false);
   const [editingDept, setEditingDept] = useState(null);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [settingsTab, setSettingsTab] = useState('appearance');
+
   const [confirmDelete, setConfirmDelete] = useState({
     isOpen: false,
     type: null,
@@ -396,7 +398,7 @@ export default function App() {
     };
   }, []);
 
-  // RBAC Guard: Non-admin users are strictly kept on chat
+  // RBAC Guard
   useEffect(() => {
     if (currentUser && currentUser.role !== 'admin' && activeView !== 'chat') {
       setActiveView('chat');
@@ -407,11 +409,11 @@ export default function App() {
     setConversations([]);
     setMessages([]);
     const data = await loginUser(credentials);
-    
+
     if (data.token) {
       setAuthToken(data.token);
     }
-    
+
     const activeUser = data.user;
     setCurrentUser(activeUser);
 
@@ -451,6 +453,21 @@ export default function App() {
     setUsersList([]);
     setActiveConvId(`session-${Date.now()}`);
     addToast('Signed out successfully', 'info');
+  };
+
+  // Profile Update Handler
+  const handleUpdateProfile = async (payload) => {
+    const res = await updateProfile(payload);
+    if (res.user) {
+      setCurrentUser((prev) => ({ ...prev, ...res.user }));
+      addToast('Profile updated successfully', 'success');
+    }
+    return res;
+  };
+
+  const handleOpenSettingsModal = (tab = 'appearance') => {
+    setSettingsTab(tab);
+    setShowSettingsModal(true);
   };
 
   // User Management Handlers (Admin Only)
@@ -658,7 +675,6 @@ export default function App() {
     }
   }, []);
 
-  // Background document status polling: strictly triggered only when documents are actively processing
   const docsProcessingRef = useRef(false);
   docsProcessingRef.current = documents.some((d) => {
     const s = String(d.status || d.processingStatus || '').toLowerCase();
@@ -1148,7 +1164,6 @@ export default function App() {
     });
 
     try {
-      // Prioritize the latest ref value to eliminate stale closure omissions
       const activeDept = selectedDepartmentIdRef.current || selectedDepartmentId;
       const departmentIds = activeDept ? [String(activeDept)] : [];
 
@@ -1669,7 +1684,7 @@ export default function App() {
         setSearchQuery={setSearchConvQuery}
         documentCount={documents.length}
         departmentCount={departments.length}
-        onOpenSettings={() => setShowSettingsModal(true)}
+        onOpenSettings={handleOpenSettingsModal}
         onOpenDrive={handleOpenDrive}
         isMobileOpen={isMobileSidebarOpen}
         onCloseMobile={() => setIsMobileSidebarOpen(false)}
@@ -1678,29 +1693,31 @@ export default function App() {
         currentUser={currentUser}
         onOpenAuth={() => setShowAuthModal(true)}
         onLogout={handleLogout}
+        theme={theme}
+        onSelectTheme={setTheme}
       />
 
       {/* 2. Main Content Viewport */}
       <main className="main-viewport">
-       <ChatHeader
-  departments={departments}
-  selectedDepartmentId={selectedDepartmentId}
-  setSelectedDepartmentId={handleSelectDepartment}
-  onToggleSidebar={handleToggleSidebar}
-  isSidebarCollapsed={isSidebarCollapsed}
-  currentUser={currentUser}
-  activeViewTitle={
-    activeView === 'documents'
-      ? 'Knowledge Base'
-      : activeView === 'departments'
-        ? 'Departments'
-        : activeView === 'users'
-          ? 'User Management'
-          : activeView === 'audit-logs'
-            ? 'Security & Audit Logs'
-            : null
-  }
-/>
+        <ChatHeader
+          departments={departments}
+          selectedDepartmentId={selectedDepartmentId}
+          setSelectedDepartmentId={handleSelectDepartment}
+          onToggleSidebar={handleToggleSidebar}
+          isSidebarCollapsed={isSidebarCollapsed}
+          currentUser={currentUser}
+          activeViewTitle={
+            activeView === 'documents'
+              ? 'Knowledge Base'
+              : activeView === 'departments'
+                ? 'Departments'
+                : activeView === 'users'
+                  ? 'User Management'
+                  : activeView === 'audit-logs'
+                    ? 'Security & Audit Logs'
+                    : null
+          }
+        />
 
         {/* View Router */}
         {activeView === 'chat' && (
@@ -1753,7 +1770,7 @@ export default function App() {
                         />
                       ))}
 
-                      {/* Sending / Processing indicator with Horizontal Stepper */}
+                      {/* Processing Stepper */}
                       {isSending && !regeneratingId && !isAnswerStreaming && !messages.some((m) => m.isStreaming) && (
                         <div className="message-row assistant">
                           <div
@@ -2029,12 +2046,15 @@ export default function App() {
         itemName={confirmDelete.name}
         warningText={confirmDelete.warning}
       />
-
+      
       <SettingsModal
         isOpen={showSettingsModal}
         onClose={() => setShowSettingsModal(false)}
+        initialTab={settingsTab}
         theme={theme}
         onSelectTheme={setTheme}
+        currentUser={currentUser}
+        onUpdateProfile={handleUpdateProfile}
         onClearConversation={() => {
           setShowSettingsModal(false);
           handleDeleteConversation(activeConvId);
