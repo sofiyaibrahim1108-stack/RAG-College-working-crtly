@@ -13,5 +13,10 @@ module.exports = {
   OLLAMA_BASE_URL: process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434',
   EMBEDDING_MODEL: process.env.EMBEDDING_MODEL || 'mxbai-embed-large',
   LLM_MODEL: process.env.LLM_MODEL || 'qwen2.5-coder:3b',
-  SIGLIP_BASE_URL: process.env.SIGLIP_BASE_URL || 'http://127.0.0.1:8000'
+  SIGLIP_BASE_URL: process.env.SIGLIP_BASE_URL || 'http://127.0.0.1:8000',
+
+  // Google Drive OAuth Config
+  GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || '',
+  GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET || '',
+  GOOGLE_REDIRECT_URI: process.env.GOOGLE_REDIRECT_URI || 'http://localhost:5000/api/drive/callback'
 };

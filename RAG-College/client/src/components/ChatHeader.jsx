@@ -7,12 +7,12 @@ export default function ChatHeader({
   setSelectedDepartmentId,
   onToggleSidebar,
   isSidebarCollapsed = false,
-  activeViewTitle
+  activeViewTitle,
+  currentUser = null
 }) {
   const [kbDropdownOpen, setKbDropdownOpen] = useState(false);
   const kbRef = useRef(null);
 
-  // Close dropdown on outside click
   useEffect(() => {
     function handleClickOutside(e) {
       if (kbRef.current && !kbRef.current.contains(e.target)) {
@@ -23,13 +23,37 @@ export default function ChatHeader({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const selectedDept = departments.find((d) => d._id === selectedDepartmentId);
-  const kbLabel = selectedDept ? (selectedDept.code || selectedDept.name) : 'All Departments';
+  // Filter departments accessible to the user
+  const userAllowedDeptIds = new Set();
+  if (currentUser) {
+    if (currentUser.departmentId) {
+      userAllowedDeptIds.add(String(currentUser.departmentId));
+    }
+    if (Array.isArray(currentUser.departmentIds)) {
+      currentUser.departmentIds.forEach((d) => {
+        const id = d?._id || d;
+        if (id) userAllowedDeptIds.add(String(id));
+      });
+    }
+  }
+
+  const isAdmin = currentUser?.role === 'admin';
+  const visibleDepartments = isAdmin
+    ? departments
+    : departments.filter((d) => userAllowedDeptIds.has(String(d._id || d.id)));
+
+  // Separate Academic Departments vs General Categories
+  const academicDepts = visibleDepartments.filter((d) => d.type !== 'general');
+  const generalCategories = visibleDepartments.filter((d) => d.type === 'general');
+
+  const selectedDept = departments.find((d) => String(d._id || d.id) === String(selectedDepartmentId));
+  const kbLabel = selectedDept
+    ? (selectedDept.code || selectedDept.name)
+    : (isAdmin ? 'All Departments' : 'My Scope');
 
   return (
     <header className="top-header">
       <div className="header-left">
-        {/* Sidebar Toggle Button (visible on mobile or when desktop sidebar is collapsed) */}
         {onToggleSidebar && (
           <button
             type="button"
@@ -75,22 +99,24 @@ export default function ChatHeader({
                   setKbDropdownOpen(false);
                 }}
               >
-                <span>All Departments</span>
+                <span>{isAdmin ? 'All Departments' : 'All My Documents + Public'}</span>
                 {!selectedDepartmentId && <Check size={13} />}
               </div>
 
-              {departments.length > 0 && (
+              {/* Academic Departments List */}
+              {academicDepts.length > 0 && (
                 <>
                   <div className="dropdown-divider" />
-                  <div className="dropdown-section-title">Filter by Department</div>
-                  {departments.map((dept) => {
-                    const isSelected = selectedDepartmentId === dept._id;
+                  <div className="dropdown-section-title">Academic Departments</div>
+                  {academicDepts.map((dept) => {
+                    const deptKey = String(dept._id || dept.id);
+                    const isSelected = String(selectedDepartmentId) === deptKey;
                     return (
                       <div
-                        key={dept._id}
+                        key={deptKey}
                         className={`dropdown-option ${isSelected ? 'selected' : ''}`}
                         onClick={() => {
-                          setSelectedDepartmentId(dept._id);
+                          setSelectedDepartmentId(deptKey);
                           setKbDropdownOpen(false);
                         }}
                       >
@@ -101,12 +127,40 @@ export default function ChatHeader({
                   })}
                 </>
               )}
+
+              {/* General / Public Categories List */}
+              {generalCategories.length > 0 && (
+                <>
+                  <div className="dropdown-divider" />
+                  <div className="dropdown-section-title">General Categories</div>
+                  {generalCategories.map((cat) => {
+                    const catKey = String(cat._id || cat.id);
+                    const isSelected = String(selectedDepartmentId) === catKey;
+                    return (
+                      <div
+                        key={catKey}
+                        className={`dropdown-option ${isSelected ? 'selected' : ''}`}
+                        onClick={() => {
+                          setSelectedDepartmentId(catKey);
+                          setKbDropdownOpen(false);
+                        }}
+                      >
+                        <span>{cat.code ? `${cat.code} — ` : ''}{cat.name}</span>
+                        {isSelected && <Check size={13} />}
+                      </div>
+                    );
+                  })}
+                </>
+              )}
             </div>
           )}
         </div>
 
-        {/* Student Avatar Circle */}
-        <div className="header-avatar-circle" title="Student Profile">
+        {/* User Identity Indicator */}
+        <div
+          className="header-avatar-circle"
+          title={currentUser ? `${currentUser.name} (${currentUser.role})` : 'Student Profile'}
+        >
           <User size={14} strokeWidth={2.4} color="#FFFFFF" />
         </div>
       </div>

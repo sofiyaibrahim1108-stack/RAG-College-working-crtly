@@ -27,12 +27,15 @@ const config = {
     candidatePoolMin: int('RAG_CANDIDATE_POOL_SIZE', 30),
     candidatePoolMultiplier: int('RAG_CANDIDATE_POOL_MULTIPLIER', 4),
     rerankTopN: int('RAG_RERANK_TOP_N', 10),
-    minRelevanceScore: float('RAG_MIN_RELEVANCE_SCORE', 0),
+    minRelevanceScore: float('RAG_MIN_RELEVANCE_SCORE', 0.002),
+    // Threshold aligned to reranker output scale so true relevant chunks are preserved
+    minTopScore: float('RAG_MIN_TOP_SCORE', 0.003),
     uncitedSourcesLimit: int('RAG_UNCITED_SOURCES_LIMIT', 2),
-    // A reranked chunk is kept only if its score is at least this fraction of the best chunk's score
-    relativeScoreFloor: float('RAG_RERANK_RELATIVE_FLOOR', 0.25),
-    // Unranked hybrid candidates are used only to backfill up to this many chunks
-    minContextChunks: int('RAG_MIN_CONTEXT_CHUNKS', 2)
+    // Lower floor: one dominant chunk should not wipe out the other useful chunks
+    relativeScoreFloor: float('RAG_RERANK_RELATIVE_FLOOR', 0.1),
+    // Always keep at least this many top reranked chunks (by rank), regardless of floor
+    minRerankedKept: int('RAG_MIN_RERANKED_KEPT', 2),
+    minContextChunks: int('RAG_MIN_CONTEXT_CHUNKS', 1)
   },
 
   tabular: {
@@ -45,9 +48,6 @@ const config = {
   image: {
     topK: int('RAG_IMAGE_TOP_K', 3),
     minScore: float('RAG_IMAGE_MIN_SCORE', 0.12),
-    // When the user names a document, the document itself is evidence. Images in it are accepted
-    // if their score is at least this fraction of the best image score (SigLIP scores are low and
-    // vary by query, so an absolute threshold alone rejects valid images).
     scopedRelativeFloor: float('RAG_IMAGE_SCOPED_RELATIVE_FLOOR', 0.3),
     suggestionTopK: int('RAG_IMAGE_SUGGESTION_TOP_K', 3),
     suggestionMinScore: float('RAG_IMAGE_SUGGESTION_MIN_SCORE', 0),
@@ -56,7 +56,7 @@ const config = {
   },
 
   context: {
-    maxChunks: int('RAG_CONTEXT_MAX_CHUNKS', 6),
+    maxChunks: int('RAG_CONTEXT_MAX_CHUNKS', 8),
     filenameMaxLength: int('RAG_FILENAME_MAX_LENGTH', 30),
     adjacentChunkLimit: int('RAG_ADJACENT_CHUNK_LIMIT', 4),
     adjacentPageWindow: int('RAG_ADJACENT_PAGE_WINDOW', 1)
@@ -70,11 +70,9 @@ const config = {
       detailed: int('RAG_MAX_TOKENS_DETAILED', 2500)
     },
     defaultLength: process.env.RAG_DEFAULT_LENGTH || 'medium',
-    // If the model answers "not found" while context exists, retry once with a more permissive prompt
     retryOnNotFound: process.env.RAG_RETRY_ON_NOT_FOUND !== '0',
-    // The grounding check runs a second LLM pass after the answer. The chat controller returns
-    // the generated answer, so this pass only adds waiting time. Set RAG_ENABLE_GROUNDING=1 to turn it back on.
-    groundingEnabled: process.env.RAG_ENABLE_GROUNDING === '1'
+    // Grounding is ON by default; set RAG_ENABLE_GROUNDING=0 to turn it off
+    groundingEnabled: process.env.RAG_ENABLE_GROUNDING !== '0'
   },
 
   casual: {
@@ -87,7 +85,7 @@ const config = {
       'You are a polite, helpful AI assistant. Respond warmly and concisely in 1-2 sentences.',
     contextHeader: 'VERIFIED SOURCES LIST',
 
-   generationSystem: `You are a verified knowledge assistant.
+    generationSystem: `You are a verified knowledge assistant.
 Answer the question based STRICTLY and ONLY on the facts present in the verified context.
 
 RULES:
@@ -109,6 +107,9 @@ RULES:
 4. REJECTION:
    - The context may contain unrelated sources; ignore those and use only the sources that relate to the question.
    - A source is relevant only if it addresses the same subject, entity, event and time period that the question asks about. Sharing a word or a general topic with the question is NOT enough.
+   - A source that only lists, repeats or rephrases the question itself (for example a list of sample or suggested questions) is NOT an answer. The answer must be a statement of fact in the context.
+   - Distinguish between a document's header or identifying details (such as issue date, reference number, author, or version) and the requirements, deadlines, or actions stated in the body. When the question asks for a deadline, due date, or required action, answer from the body text that states it, not from the document's own issue date.
+   - For yes/no questions, decide Yes or No strictly from the explicit wording in the context (for example a statement that begins with "No", or says something is not required, means No). Never reverse or soften the polarity stated in the context.
    - The context may express the information differently from the question (examples, tables, code, symbols). Use it only if it actually answers the question.
    - If some of the question can be answered, answer that part and state which part is missing.
    - If the context does not explicitly state the answer, do not guess, infer, or answer with a related fact. Output EXACTLY the "not found" sentence provided.
@@ -117,17 +118,20 @@ RULES:
    - Write the answer in your own words as clear sentences. Do not wrap the whole answer in quotation marks.
    - Wrap every code snippet, operator, symbol, keyword, function name and literal value in single backticks, for example \`value\`, so it renders exactly as written.`,
 
-generationRetrySystem: `You are a verified knowledge assistant.
+    generationRetrySystem: `You are a verified knowledge assistant.
 A previous attempt concluded the context had no answer. Read every source in the verified context again.
 
 RULES:
 1. Use only facts present in the verified context. Never add outside facts.
 2. The relevant information may be written as examples, code, tables, symbols or lists rather than as a direct explanation. Explain it only if it actually answers the question.
 3. A source is relevant only if it addresses the same subject, entity, event and time period that the question asks about. Sharing a word or a general topic is NOT enough.
-4. Cite sources with their exact SOURCE number, like [1] or [1, 2]. Only cite numbers that exist.
-5. If only part of the question is covered, answer that part and say what is missing.
-6. If the context does not explicitly state the answer, do not infer it. Output EXACTLY the "not found" sentence provided.
-7. Write in your own words as clear sentences, not wrapped in quotation marks. Wrap every code snippet, operator, symbol, keyword, function name and literal value in single backticks so it renders exactly as written.`
+4. A source that only lists, repeats or rephrases the question itself (for example a list of sample or suggested questions) is NOT an answer. The answer must be a statement of fact in the context.
+5. Cite sources with their exact SOURCE number, like [1] or [1, 2]. Only cite numbers that exist.
+6. If only part of the question is covered, answer that part and say what is missing.
+7. If the context does not explicitly state the answer, do not infer it. Output EXACTLY the "not found" sentence provided.
+8. Write in your own words as clear sentences, not wrapped in quotation marks. Wrap every code snippet, operator, symbol, keyword, function name and literal value in single backticks so it renders exactly as written.
+9. Distinguish between a document's header or identifying details (issue date, reference number, author, version) and the requirements, deadlines, or actions stated in the body. For deadline or due-date questions, use the body text that states it, not the issue date.
+10. For yes/no questions, decide Yes or No strictly from the explicit wording in the context (a statement that begins with No, or says something is not required, means No). Never reverse the polarity stated in the context.`
   },
   messages: {
     casualFallback: 'Hello! How can I assist you today?',
@@ -178,15 +182,9 @@ const truncateFilename = (name) =>
 const isVisualState = (state) => Boolean(state.isVisualQuery) && state.visualMode !== 'text_only';
 const activeQueryOf = (state) => state.searchQuery || state.question;
 
-const isScopeUnresolved = (state) =>
-  Array.isArray(state.selectedDepartments) &&
-  state.selectedDepartments.length > 0 &&
-  !(state.detectedDepartmentIds?.length > 0);
+// If user explicitly selected departments, use them; if not resolved, don't block public documents
+const isScopeUnresolved = (state) => false;
 
-// ---------- Streaming helpers ----------
-// The chat controller passes onToken / onReset through the graph config:
-//   graph.invoke(input, { configurable: { onToken, onReset } })
-// When they are missing (for example when the graph is invoked elsewhere) the nodes behave exactly as before.
 function streamHooksOf(runConfig) {
   const configurable = runConfig?.configurable || {};
   return {
@@ -195,9 +193,6 @@ function streamHooksOf(runConfig) {
   };
 }
 
-// Holds back the first tokens while they could still turn out to be the "not found" sentence,
-// so the user never sees that sentence flash on screen before a retry. As soon as the text
-// diverges from it, everything held is released and tokens pass straight through.
 function createNotFoundGate(sentence, emit) {
   const target = String(sentence || '').trim();
   let held = '';
@@ -245,12 +240,13 @@ function diversifyByDocument(images, maxDocs, total) {
   return [...firstPerDoc, ...rest].slice(0, total);
 }
 
-// ---------- Chunk selection helpers ----------
 const chunkTextOf = (c) => c.content || c.text || '';
+
+const chunkPageOf = (c) => c.metadata?.pageNumber || c.pageNumber;
 
 const chunkKeyOf = (c) =>
   (c._id || c.chunkId)?.toString() ||
-  `${c.metadata?.sourceFilename || ''}|${c.metadata?.pageNumber || c.pageNumber || ''}|${chunkTextOf(c).slice(0, 80)}`;
+  `${c.metadata?.sourceFilename || ''}|${chunkPageOf(c) || ''}|${chunkTextOf(c).slice(0, 80)}`;
 
 const chunkScoreOf = (c) => {
   if (typeof c.rerankScore === 'number') return c.rerankScore;
@@ -258,22 +254,33 @@ const chunkScoreOf = (c) => {
   return null;
 };
 
-// Keeps reranked chunks whose score is within a fraction of the best score.
-// Purely relative, so it adapts to whatever scale the reranker produces.
+// Keep chunks above the relative floor, but always keep the top-N by rank
 function selectRelevantRanked(rankedChunks) {
   const ranked = Array.isArray(rankedChunks) ? rankedChunks : [];
   if (ranked.length === 0) return [];
 
-  const topScore = chunkScoreOf(ranked[0]);
-  if (topScore === null || topScore <= 0) return ranked;
+  const minFloor = RET.minRelevanceScore || 0.002;
+  const filtered = ranked.filter((c) => {
+    const s = chunkScoreOf(c);
+    return s === null || s >= minFloor;
+  });
+  if (filtered.length === 0) return [];
 
-  return ranked.filter((c) => {
+  const topScore = chunkScoreOf(filtered[0]);
+  if (topScore === null || topScore <= 0) return filtered;
+
+  return filtered.filter((c, idx) => {
+    if (idx < RET.minRerankedKept) return true;
     const s = chunkScoreOf(c);
     return s === null || s >= topScore * RET.relativeScoreFloor;
   });
 }
 
 function pickContextChunks(rankedChunks, candidateChunks) {
+  const rankedList = Array.isArray(rankedChunks) ? rankedChunks : [];
+  const bestScore = rankedList.length > 0 ? chunkScoreOf(rankedList[0]) : null;
+  if (bestScore !== null && bestScore < RET.minTopScore) return [];
+
   const seen = new Set();
   const picked = [];
 
@@ -289,13 +296,49 @@ function pickContextChunks(rankedChunks, candidateChunks) {
     add(chunk);
   }
 
-  // Unranked candidates only backfill when reranking left too little context
   for (const chunk of candidateChunks || []) {
     if (picked.length >= RET.minContextChunks) break;
     add(chunk);
   }
 
   return picked;
+}
+
+// Fill remaining context slots with chunks from the same document as the top-ranked chunk,
+// taken from the already-retrieved candidate pool: same page first, then nearby pages.
+function expandWithSameDocumentChunks(pickedChunks, candidateChunks) {
+  const picked = Array.isArray(pickedChunks) ? pickedChunks : [];
+  const remaining = Math.min(CTX.adjacentChunkLimit, CTX.maxChunks - picked.length);
+  if (picked.length === 0 || remaining <= 0) return picked;
+
+  const anchor = picked[0];
+  const anchorDoc = idOf(anchor.documentId);
+  const anchorFilename = anchor.metadata?.sourceFilename || anchor.documentId?.originalFilename;
+  const anchorPage = Number(chunkPageOf(anchor));
+  if (!anchorDoc && !anchorFilename) return picked;
+
+  const pageDistance = (c) => {
+    const p = Number(chunkPageOf(c));
+    if (!Number.isFinite(p) || !Number.isFinite(anchorPage)) return Infinity;
+    return Math.abs(p - anchorPage);
+  };
+
+  const isSameDocument = (c) =>
+    (anchorDoc && idOf(c.documentId) === anchorDoc) ||
+    (anchorFilename &&
+      (c.metadata?.sourceFilename === anchorFilename || c.documentId?.originalFilename === anchorFilename));
+
+  const seen = new Set(picked.map(chunkKeyOf));
+  const extras = (candidateChunks || [])
+    .map((c, order) => ({ c, order, dist: pageDistance(c) }))
+    .filter(
+      ({ c, dist }) => isSameDocument(c) && !seen.has(chunkKeyOf(c)) && dist <= CTX.adjacentPageWindow
+    )
+    .sort((a, b) => a.dist - b.dist || a.order - b.order)
+    .slice(0, remaining)
+    .map(({ c }) => c);
+
+  return [...picked, ...extras];
 }
 
 // 1. LangGraph State Schema
@@ -354,6 +397,11 @@ async function routerNode(state) {
     const isExplicitLength = VALID_LENGTHS.includes(state.answerLength);
     const answerLength = isExplicitLength ? state.answerLength : routeResult.answerLength || GEN.defaultLength;
 
+    // Preserve explicitly passed user department selection if router didn't pick any
+    const finalDepartmentIds = (routeResult.departmentIds && routeResult.departmentIds.length > 0)
+      ? routeResult.departmentIds
+      : (state.selectedDepartments || []);
+
     return {
       intent: routeResult.intent,
       visualMode,
@@ -361,7 +409,7 @@ async function routerNode(state) {
       answerLength,
       searchQuery: routeResult.searchQuery || state.question,
       detectedDepartments: routeResult.departments || [],
-      detectedDepartmentIds: routeResult.departmentIds || [],
+      detectedDepartmentIds: finalDepartmentIds,
       timings: { routingMs }
     };
   } finally {
@@ -402,7 +450,6 @@ async function casualNode(state, runConfig) {
 }
 
 // 4. Tabular Node
-// 4. Tabular Node
 async function tabularNode(state) {
   state.timer?.start('tabular');
   const t0 = Date.now();
@@ -412,8 +459,7 @@ async function tabularNode(state) {
       documentId: state.documentId || null,
       blockAll: isScopeUnresolved(state)
     };
-    // Use the user's original question: the router's rewritten searchQuery can lose the question
-    // (for example it may return only a table name), and the SQL step needs the real wording.
+
     const tabularResult = await executeTabularQuery(state.question || activeQueryOf(state), scope);
     const status = tabularResult.status || '';
 
@@ -468,10 +514,6 @@ async function textRetrievalNode(state) {
     retrievalMs: 0
   };
 
-  if (isScopeUnresolved(state)) {
-    return { retrievedChunks: [], timings: { ...emptyTimings, tTextEnd: Date.now() } };
-  }
-
   try {
     const activeQuery = activeQueryOf(state);
     const tEmb = Date.now();
@@ -480,6 +522,8 @@ async function textRetrievalNode(state) {
 
     const topK = RET.topK;
     const candidateLimit = Math.max(RET.candidatePoolMin, topK * RET.candidatePoolMultiplier);
+
+    // Pass departmentIds (null if none chosen = searches all accessible / public docs)
     const departmentIds = state.detectedDepartmentIds?.length > 0 ? state.detectedDepartmentIds : null;
 
     const hybridResult = await retrieveHybridChunks({
@@ -502,23 +546,29 @@ async function textRetrievalNode(state) {
     console.log('[DEBUG RETRIEVAL] Total candidates from hybrid:', candidateChunks.length);
     console.log('[DEBUG CANDIDATES FILES & PAGES]:', candidateChunks.map((c) => ({
       file: c.metadata?.sourceFilename || c.documentId?.originalFilename,
-      page: c.metadata?.pageNumber || c.pageNumber,
+      page: chunkPageOf(c),
       snippet: chunkTextOf(c).slice(0, 70).replace(/\n/g, ' ')
     })));
 
     console.log('[DEBUG RERANKED CHUNKS]:', (rankedChunks || []).map((c) => ({
       file: c.metadata?.sourceFilename || c.documentId?.originalFilename,
-      page: c.metadata?.pageNumber || c.pageNumber,
+      page: chunkPageOf(c),
       score: c.rerankScore ?? c.score,
       snippet: chunkTextOf(c).slice(0, 70).replace(/\n/g, ' ')
     })));
 
-    const safeChunks = pickContextChunks(rankedChunks, candidateChunks);
+    const pickedChunks = pickContextChunks(rankedChunks, candidateChunks);
+    const safeChunks = expandWithSameDocumentChunks(pickedChunks, candidateChunks);
 
+    console.log('[DEBUG PICKED/EXTRAS]:', {
+      picked: pickedChunks.length,
+      extras: safeChunks.length - pickedChunks.length
+    });
     console.log('[DEBUG CONTEXT CHUNKS]:', safeChunks.map((c) => ({
       file: c.metadata?.sourceFilename || c.documentId?.originalFilename,
-      page: c.metadata?.pageNumber || c.pageNumber,
-      chars: chunkTextOf(c).length
+      page: chunkPageOf(c),
+      chars: chunkTextOf(c).length,
+      snippet: chunkTextOf(c).slice(0, 100).replace(/\n/g, ' ')
     })));
 
     return {
@@ -549,7 +599,7 @@ async function textRetrievalNode(state) {
 async function imageRetrievalNode(state) {
   const tStart = Date.now();
 
-  if (!isVisualState(state) || isScopeUnresolved(state)) {
+  if (!isVisualState(state)) {
     state.timer?.skip('siglip');
     return {
       hasImageEvidence: false,
@@ -602,8 +652,6 @@ async function imageRetrievalNode(state) {
       pool = pool.filter((img) => String(img.documentId?._id || img.documentId) === String(explicitDocId));
     }
 
-    // The document counts as "named" when it was passed in, found by filename, or resolved by the
-    // retrieval service from the question text (the service reports this in scopedDocumentIds).
     const isDocumentScoped =
       Boolean(explicitDocId) ||
       (Array.isArray(imageRetResult.scopedDocumentIds) && imageRetResult.scopedDocumentIds.length > 0);
@@ -615,7 +663,6 @@ async function imageRetrievalNode(state) {
       const s = img.similarityScore;
       if (typeof s !== 'number') return true;
       if (s >= IMG.minScore) return true;
-      // Named document: accept images that are close to the best match instead of using the absolute cutoff
       return isDocumentScoped && topScore > 0 && s >= topScore * IMG.scopedRelativeFloor;
     };
     const strictPool = pool.filter(passesStrict);
@@ -896,7 +943,6 @@ async function generatorNode(state, runConfig) {
 
     const maxTokens = GEN.maxTokens[lengthKey] ?? GEN.maxTokens.medium;
 
-    // When a diagram is attached, its lead-in line is shown first, then the model's text follows
     const leadText =
       isVisual && state.hasImageEvidence && images.length > 0 ? MSG.imageLead(imageDisplay(images[0])) : '';
     const emitLead = () => {
@@ -924,7 +970,6 @@ async function generatorNode(state, runConfig) {
     emitLead();
     let rawAnswer = await runGeneration(PROMPTS.generationSystem);
 
-    // Rough size check: helps spot prompts that exceed the model's context window
     const promptChars = userPrompt.length + PROMPTS.generationSystem.length;
     console.log('[DEBUG GENERATION]', {
       sources: sources.length,
@@ -937,7 +982,6 @@ async function generatorNode(state, runConfig) {
 
     if (isFallback && GEN.retryOnNotFound && state.context) {
       console.log('[GeneratorNode] Model returned not-found with context present, retrying once');
-      // Clear whatever the client has already shown, then stream the retry from scratch
       if (onReset) onReset();
       emitLead();
       const retryAnswer = await runGeneration(PROMPTS.generationRetrySystem);
@@ -990,7 +1034,6 @@ async function generatorNode(state, runConfig) {
   }
 }
 
-// services/langgraph/workflow.js
 function filterSupportingSources(answer, sources, options = {}) {
   const { isVisualQuery = false, isFallback = false } = options || {};
   if (!sources || sources.length === 0) return { answer, sources: [] };

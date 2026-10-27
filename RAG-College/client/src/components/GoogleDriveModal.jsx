@@ -8,7 +8,11 @@ import {
   Search,
   ExternalLink,
   FileSpreadsheet,
-  File
+  File,
+  Globe,
+  Lock,
+  CheckSquare,
+  Square
 } from 'lucide-react';
 import {
   fetchDriveStatus,
@@ -33,28 +37,25 @@ export default function GoogleDriveModal({
   const [driveFiles, setDriveFiles] = useState([]);
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedFile, setSelectedFile] = useState(null);
+  // MULTI-SELECTION STATE (Array of selected file objects)
+  const [selectedFiles, setSelectedFiles] = useState([]);
   const [selectedDeptIds, setSelectedDeptIds] = useState([]);
+  const [isPublic, setIsPublic] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [importProgressText, setImportProgressText] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [deptError, setDeptError] = useState('');
-  const [duplicateWarning, setDuplicateWarning] = useState(null);
 
   const deptDropdownRef = useRef(null);
-
-  const LARGE_FILE_THRESHOLD = 1 * 1024 * 1024; // 1 MB
-  const isLargeFile =
-    selectedFile?.size !== undefined &&
-    selectedFile?.size !== null &&
-    !isNaN(Number(selectedFile.size)) &&
-    Number(selectedFile.size) > LARGE_FILE_THRESHOLD;
 
   useEffect(() => {
     if (isOpen) {
       setErrorMsg('');
       setDeptError('');
-      setDuplicateWarning(null);
       setIsImporting(false);
+      setIsPublic(false);
+      setSelectedDeptIds([]);
+      setSelectedFiles([]);
       checkStatusAndLoad();
     }
   }, [isOpen]);
@@ -69,7 +70,6 @@ export default function GoogleDriveModal({
         await loadFiles();
       }
     } catch (err) {
-      console.error('Failed to check Drive status:', err);
       setErrorMsg(getFriendlyErrorMessage(err, 'drive'));
     } finally {
       setIsLoadingStatus(false);
@@ -83,7 +83,6 @@ export default function GoogleDriveModal({
       const res = await fetchDriveFiles({ search });
       setDriveFiles(res.files || []);
     } catch (err) {
-      console.error('Failed to load Drive files:', err);
       setErrorMsg(getFriendlyErrorMessage(err, 'drive'));
     } finally {
       setIsLoadingFiles(false);
@@ -113,7 +112,6 @@ export default function GoogleDriveModal({
         }, 1000);
       }
     } catch (err) {
-      console.error('OAuth connection error:', err);
       setErrorMsg(getFriendlyErrorMessage(err, 'drive'));
     }
   };
@@ -123,59 +121,93 @@ export default function GoogleDriveModal({
       await disconnectDrive();
       setAuthStatus((prev) => ({ ...prev, authenticated: false }));
       setDriveFiles([]);
-      setSelectedFile(null);
+      setSelectedFiles([]);
       if (onToast) onToast('Google Drive disconnected', 'info');
     } catch (err) {
       setErrorMsg(getFriendlyErrorMessage(err, 'drive'));
     }
   };
 
-  const handleImport = async (force = false) => {
-    if (selectedDeptIds.length === 0) {
-      setDeptError('Select at least one department');
+  const handleScopeChange = (scopeIsPublic) => {
+    setIsPublic(scopeIsPublic);
+    setDeptError('');
+    if (scopeIsPublic) {
+      setSelectedDeptIds([]);
+    }
+  };
+
+  // Toggle selection for multiple files
+  const toggleFileSelect = (file) => {
+    setSelectedFiles((prev) => {
+      const exists = prev.some((f) => f.id === file.id);
+      if (exists) {
+        return prev.filter((f) => f.id !== file.id);
+      } else {
+        return [...prev, file];
+      }
+    });
+  };
+
+  // Batch import handler
+  const handleBatchImport = async () => {
+    if (!isPublic && selectedDeptIds.length === 0) {
+      setDeptError('Please assign at least 1 department');
       deptDropdownRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       deptDropdownRef.current?.focus();
       return;
     }
 
-    if (!selectedFile) {
-      setErrorMsg('Please select a file to import from Google Drive.');
+    if (selectedFiles.length === 0) {
+      setErrorMsg('Please select at least 1 file to import.');
       return;
     }
 
     setIsImporting(true);
     setErrorMsg('');
     setDeptError('');
-    setDuplicateWarning(null);
+
+    let successCount = 0;
+    const errors = [];
 
     try {
-      const res = await importDriveFile({
-        fileId: selectedFile.id,
-        departmentIds: selectedDeptIds,
-        forceReimport: force
-      });
+      for (let i = 0; i < selectedFiles.length; i++) {
+        const currentFile = selectedFiles[i];
+        setImportProgressText(`Importing (${i + 1}/${selectedFiles.length}): "${currentFile.name}"...`);
 
-      if (onToast) {
-        onToast(`Imported "${selectedFile.name}" into knowledge base!`, 'success');
+        try {
+          const res = await importDriveFile({
+            fileId: currentFile.id,
+            departmentIds: selectedDeptIds,
+            isPublic: isPublic,
+            forceReimport: false
+          });
+
+          successCount++;
+          if (onImportSuccess && res.data) {
+            await onImportSuccess(res.data);
+          }
+        } catch (itemErr) {
+          const msg = itemErr.response?.data?.message || itemErr.message;
+          errors.push(`"${currentFile.name}": ${msg}`);
+        }
       }
 
-      if (onImportSuccess) {
-        await onImportSuccess(res.data);
+      if (successCount > 0 && onToast) {
+        onToast(`Successfully imported ${successCount} document(s) from Drive!`, 'success');
       }
 
-      setSelectedFile(null);
-      setSelectedDeptIds([]);
-      setDeptError('');
-      onClose();
-    } catch (err) {
-      const responseData = err.response?.data;
-      if (responseData?.duplicate || err.duplicate) {
-        setDuplicateWarning(responseData?.message || err.message);
+      if (errors.length > 0) {
+        setErrorMsg(`Imported ${successCount}/${selectedFiles.length}. Errors:\n` + errors.join('; '));
       } else {
-        setErrorMsg(responseData?.message || getFriendlyErrorMessage(err, 'drive'));
+        setSelectedFiles([]);
+        setSelectedDeptIds([]);
+        onClose();
       }
+    } catch (generalErr) {
+      setErrorMsg(getFriendlyErrorMessage(generalErr, 'drive'));
     } finally {
       setIsImporting(false);
+      setImportProgressText('');
     }
   };
 
@@ -184,52 +216,18 @@ export default function GoogleDriveModal({
     const type = (fileType || ext || 'pdf').toLowerCase();
 
     if (type.includes('pdf') || ext === 'pdf') {
-      return { label: 'PDF', key: 'pdf', color: '#B42318', bg: '#FEE4E2' };
+      return { label: 'PDF', bg: '#FEE4E2', color: '#B42318', icon: <FileText size={18} /> };
     }
-    if (type.includes('sheet') || type.includes('excel') || ext === 'xlsx' || ext === 'xls' || ext === 'csv') {
-      return { label: ext.toUpperCase() || 'XLSX', key: 'sheet', color: '#027A48', bg: '#D1FADF' };
+    if (type.includes('sheet') || type.includes('excel') || ['xlsx', 'xls', 'csv'].includes(ext)) {
+      return { label: ext.toUpperCase() || 'XLSX', bg: '#D1FADF', color: '#027A48', icon: <FileSpreadsheet size={18} /> };
     }
-    if (type.includes('presentation') || type.includes('powerpoint') || ext === 'pptx' || ext === 'ppt') {
-      return { label: ext.toUpperCase() || 'PPTX', key: 'ppt', color: '#B54708', bg: '#FEF0C7' };
-    }
-    if (type.includes('word') || type.includes('document') || ext === 'docx' || ext === 'doc') {
-      return { label: ext.toUpperCase() || 'DOCX', key: 'doc', color: '#175CD3', bg: '#D1E9FF' };
-    }
-    if (type.includes('text') || ext === 'txt') {
-      return { label: 'TXT', key: 'txt', color: '#344054', bg: '#EAECF0' };
-    }
-    return { label: ext ? ext.toUpperCase() : 'DOC', key: 'file', color: '#475467', bg: '#F2F4F7' };
-  };
-
-  const formatModifiedDate = (dateString) => {
-    if (!dateString) return 'Modified recently';
-    try {
-      const d = new Date(dateString);
-      if (isNaN(d.getTime())) return 'Modified recently';
-      const now = new Date();
-      const diffMs = now - d;
-      const diffHours = diffMs / (1000 * 60 * 60);
-      const diffDays = diffHours / 24;
-
-      if (diffHours < 24 && now.getDate() === d.getDate()) {
-        return 'Modified today';
-      }
-      if (diffDays < 2) {
-        return 'Modified yesterday';
-      }
-      if (diffDays < 7) {
-        return `Modified ${Math.floor(diffDays)} days ago`;
-      }
-      return `Modified ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
-    } catch {
-      return 'Modified recently';
-    }
+    return { label: ext ? ext.toUpperCase() : 'DOC', bg: '#EFF4FF', color: '#175CD3', icon: <File size={18} /> };
   };
 
   const formatSize = (bytes) => {
-    if (!bytes && bytes !== 0) return null;
+    if (!bytes && bytes !== 0) return '';
     const num = Number(bytes);
-    if (isNaN(num)) return null;
+    if (isNaN(num)) return '';
     if (num < 1024) return `${num} B`;
     if (num < 1024 * 1024) return `${(num / 1024).toFixed(1)} KB`;
     return `${(num / (1024 * 1024)).toFixed(1)} MB`;
@@ -240,298 +238,352 @@ export default function GoogleDriveModal({
   return (
     <div className="modal-backdrop" onClick={isImporting ? undefined : onClose}>
       <div
-        className="modal-container gdrive-modal"
+        className="modal-container"
+        style={{
+          maxWidth: '560px',
+          width: '92%',
+          background: '#FFFFFF',
+          borderRadius: '16px',
+          boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05)',
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column'
+        }}
         onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="gdrive-modal-title"
       >
-        <div className="modal-header-row">
-          <div className="modal-header-text">
-            <h2 id="gdrive-modal-title" className="modal-header-title">
-              Google Drive
+        {/* Header */}
+        <div style={{
+          padding: '18px 24px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          borderBottom: '1px solid #F1F5F9'
+        }}>
+          <div>
+            <h2 style={{ fontSize: '16px', fontWeight: 700, color: '#0F172A', margin: 0 }}>
+              Import from Google Drive
             </h2>
-            <p className="modal-header-subtitle">
-              Import documents directly from your Google Drive
+            <p style={{ fontSize: '12.5px', color: '#64748B', margin: '2px 0 0' }}>
+              Select one or multiple documents to index into the knowledge base
             </p>
           </div>
           <button
             type="button"
-            className="btn-modal-close-icon"
             onClick={onClose}
             disabled={isImporting}
-            aria-label="Close Google Drive dialog"
+            style={{
+              background: '#F8FAFC',
+              border: 'none',
+              borderRadius: '8px',
+              padding: '6px',
+              cursor: 'pointer',
+              color: '#64748B'
+            }}
           >
             <X size={18} />
           </button>
         </div>
 
-        <div className="modal-content-body gdrive-modal-body">
+        {/* Content */}
+        <div style={{ padding: '20px 24px', overflowY: 'auto', maxHeight: '70vh' }}>
           {isLoadingStatus ? (
-            <div style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--text-secondary)' }}>
-              <Loader2 size={28} className="spin" style={{ margin: '0 auto 12px', color: 'var(--primary)' }} />
-              <div style={{ fontSize: '14.5px', fontWeight: '500' }}>Checking Google Drive connection...</div>
-            </div>
-          ) : !authStatus.configured ? (
-            <div style={{ padding: '24px', background: '#FEF2F2', borderRadius: '12px', border: '1px solid #FEE2E2', textAlign: 'center' }}>
-              <AlertCircle size={32} color="#DC2626" style={{ margin: '0 auto 12px' }} />
-              <div style={{ fontWeight: '700', color: '#991B1B', fontSize: '16px', marginBottom: '8px' }}>
-                Google OAuth Not Configured
-              </div>
-              <p style={{ fontSize: '13.5px', color: '#7F1D1D', lineHeight: 1.5, margin: '0 0 16px', maxWidth: '460px', marginLeft: 'auto', marginRight: 'auto' }}>
-                To enable Google Drive importing, add your Google OAuth client credentials in your server environment file.
-              </p>
-              <div style={{ fontSize: '12.5px', color: '#991B1B', background: '#FFFFFF', padding: '12px 14px', borderRadius: '8px', textAlign: 'left', fontFamily: 'monospace', border: '1px solid #FECACA', maxWidth: '440px', margin: '0 auto' }}>
-                GOOGLE_CLIENT_ID=your_client_id<br />
-                GOOGLE_CLIENT_SECRET=your_client_secret<br />
-                GOOGLE_REDIRECT_URI=http://localhost:5000/api/drive/callback
-              </div>
+            <div style={{ padding: '40px 0', textAlign: 'center' }}>
+              <Loader2 size={24} className="spin" style={{ color: '#2563EB', margin: '0 auto 8px' }} />
+              <div style={{ fontSize: '13px', color: '#64748B' }}>Connecting to Drive...</div>
             </div>
           ) : !authStatus.authenticated ? (
-            <div className="gdrive-empty-auth-box">
-              <div className="gdrive-empty-icon-circle">
-                <GoogleDriveIcon size={38} />
+            <div style={{
+              textAlign: 'center',
+              padding: '32px 16px',
+              background: '#F8FAFC',
+              borderRadius: '12px',
+              border: '1px dashed #CBD5E1'
+            }}>
+              <div style={{
+                width: '48px',
+                height: '48px',
+                borderRadius: '50%',
+                background: '#FFFFFF',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.06)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 12px'
+              }}>
+                <GoogleDriveIcon size={26} />
               </div>
-              <h3 className="gdrive-empty-title">Connect Google Drive</h3>
-              <p className="gdrive-empty-desc">
-                Connect your Google Drive to import documents into your private college knowledge base.
+              <h3 style={{ fontSize: '14.5px', fontWeight: 600, color: '#0F172A', margin: '0 0 6px' }}>
+                Connect your account
+              </h3>
+              <p style={{ fontSize: '12.5px', color: '#64748B', maxWidth: '340px', margin: '0 auto 16px' }}>
+                Link your Google Drive securely to browse and import your college documents.
               </p>
               <button
                 type="button"
-                className="gdrive-connect-btn"
                 onClick={handleConnect}
+                style={{
+                  background: '#2563EB',
+                  color: '#FFFFFF',
+                  padding: '9px 18px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
               >
-                <GoogleDriveIcon size={18} />
-                <span>Connect Google Drive</span>
-                <ExternalLink size={15} />
+                <span>Authorize Google Drive</span>
+                <ExternalLink size={14} />
               </button>
-              <div className="gdrive-empty-trust">
-                Your files remain private and are only imported when you select them.
-              </div>
             </div>
           ) : (
             <>
-              <MultiSelectDropdown
-                ref={deptDropdownRef}
-                label="Department"
-                required={true}
-                options={departments}
-                selectedIds={selectedDeptIds}
-                onChange={(newIds) => {
-                  setSelectedDeptIds(newIds);
-                  if (newIds.length > 0) setDeptError('');
-                }}
-                error={deptError}
-                placeholder="Select departments"
-                id="gdrive-dept-select"
-              />
+              {/* Access Control Switcher */}
+              <div style={{
+                background: '#F8FAFC',
+                padding: '10px 14px',
+                borderRadius: '10px',
+                border: '1px solid #E2E8F0',
+                marginBottom: '14px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  {isPublic ? <Globe size={16} color="#16A34A" /> : <Lock size={16} color="#475467" />}
+                  <span style={{ fontSize: '12.5px', fontWeight: 600, color: '#334155' }}>
+                    {isPublic ? 'Public Document (All Departments)' : 'Department Private Access'}
+                  </span>
+                </div>
 
-              <div className="gdrive-top-bar">
-                <div className="gdrive-search-wrap">
-                  <Search size={16} className="gdrive-search-icon" />
+                <div style={{ display: 'flex', background: '#E2E8F0', padding: '2px', borderRadius: '7px' }}>
+                  <button
+                    type="button"
+                    onClick={() => handleScopeChange(false)}
+                    style={{
+                      border: 'none',
+                      padding: '4px 10px',
+                      borderRadius: '5px',
+                      fontSize: '11.5px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      background: !isPublic ? '#FFFFFF' : 'transparent',
+                      color: !isPublic ? '#0F172A' : '#64748B',
+                      boxShadow: !isPublic ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+                    }}
+                  >
+                    Private
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleScopeChange(true)}
+                    style={{
+                      border: 'none',
+                      padding: '4px 10px',
+                      borderRadius: '5px',
+                      fontSize: '11.5px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      background: isPublic ? '#16A34A' : 'transparent',
+                      color: isPublic ? '#FFFFFF' : '#64748B',
+                      boxShadow: isPublic ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+                    }}
+                  >
+                    Public
+                  </button>
+                </div>
+              </div>
+
+              {/* Department Selector */}
+              {!isPublic && (
+                <div style={{ marginBottom: '14px' }}>
+                  <MultiSelectDropdown
+                    ref={deptDropdownRef}
+                    label="Assign Target Department(s)"
+                    required={true}
+                    options={departments}
+                    selectedIds={selectedDeptIds}
+                    onChange={(newIds) => {
+                      setSelectedDeptIds(newIds);
+                      if (newIds.length > 0) setDeptError('');
+                    }}
+                    error={deptError}
+                    placeholder="Select 1 or more departments..."
+                    id="gdrive-dept-select"
+                  />
+                </div>
+              )}
+
+              {/* Search & Actions Bar */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                marginBottom: '10px'
+              }}>
+                <div style={{ position: 'relative', flex: 1 }}>
+                  <Search size={14} color="#94A3B8" style={{ position: 'absolute', left: '10px', top: '9px' }} />
                   <input
                     type="text"
-                    placeholder="Search files..."
+                    placeholder="Search drive files..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && loadFiles(searchQuery)}
-                    className="gdrive-search-input"
-                    aria-label="Search Drive files"
+                    style={{
+                      width: '100%',
+                      padding: '6px 10px 6px 30px',
+                      borderRadius: '8px',
+                      border: '1px solid #E2E8F0',
+                      fontSize: '12px',
+                      outline: 'none',
+                      boxSizing: 'border-box'
+                    }}
                   />
-                  {searchQuery && (
-                    <button
-                      type="button"
-                      className="gdrive-search-clear"
-                      onClick={() => {
-                        setSearchQuery('');
-                        loadFiles('');
-                      }}
-                      aria-label="Clear search"
-                    >
-                      <X size={14} />
-                    </button>
-                  )}
                 </div>
 
-                <div className="gdrive-status-controls">
-                  <span className="gdrive-status-badge">
-                    <span className="gdrive-status-dot" /> Connected
-                  </span>
+                {/* Quick Select All / Deselect All Toggle */}
+                {driveFiles.length > 0 && (
                   <button
                     type="button"
-                    className="btn-gdrive-action"
-                    onClick={() => loadFiles()}
-                    disabled={isLoadingFiles}
-                    title="Refresh file list"
-                    aria-label="Refresh files"
+                    onClick={() => {
+                      if (selectedFiles.length === driveFiles.length) {
+                        setSelectedFiles([]);
+                      } else {
+                        setSelectedFiles([...driveFiles]);
+                      }
+                    }}
+                    style={{
+                      background: '#F8FAFC',
+                      border: '1px solid #E2E8F0',
+                      borderRadius: '8px',
+                      padding: '6px 10px',
+                      fontSize: '11.5px',
+                      fontWeight: 600,
+                      color: '#475467',
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap'
+                    }}
                   >
-                    <RefreshCw size={14} className={isLoadingFiles ? 'spin' : ''} />
+                    {selectedFiles.length === driveFiles.length ? 'Clear All' : 'Select All'}
                   </button>
-                  <button
-                    type="button"
-                    className="btn-gdrive-disconnect"
-                    onClick={handleDisconnect}
-                    title="Disconnect Google Drive"
-                  >
-                    Disconnect
-                  </button>
-                </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => loadFiles()}
+                  disabled={isLoadingFiles}
+                  title="Refresh"
+                  style={{
+                    background: '#F8FAFC',
+                    border: '1px solid #E2E8F0',
+                    borderRadius: '8px',
+                    padding: '6px 8px',
+                    cursor: 'pointer',
+                    color: '#64748B'
+                  }}
+                >
+                  <RefreshCw size={13} className={isLoadingFiles ? 'spin' : ''} />
+                </button>
               </div>
 
-              <div className="gdrive-section-title-row">
-                <span className="gdrive-section-title">Available files</span>
-                <span className="gdrive-section-count">
-                  {driveFiles.length} {driveFiles.length === 1 ? 'file' : 'files'}
-                </span>
-              </div>
-
-              <div className="gdrive-file-list" role="listbox" aria-label="Available Google Drive files">
+              {/* Files Multi-Select List */}
+              <div style={{
+                maxHeight: '220px',
+                overflowY: 'auto',
+                border: '1px solid #E2E8F0',
+                borderRadius: '10px',
+                background: '#FFFFFF'
+              }}>
                 {isLoadingFiles ? (
-                  <div style={{ padding: '36px 20px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '13.5px' }}>
-                    <Loader2 size={22} className="spin" style={{ margin: '0 auto 8px', color: 'var(--primary)' }} />
-                    <div>Loading documents from Drive...</div>
+                  <div style={{ padding: '30px 0', textAlign: 'center', color: '#94A3B8', fontSize: '12px' }}>
+                    <Loader2 size={18} className="spin" style={{ margin: '0 auto 6px', color: '#2563EB' }} />
+                    Loading files...
                   </div>
                 ) : driveFiles.length === 0 ? (
-                  <div style={{ padding: '36px 20px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '13.5px' }}>
-                    {searchQuery ? 'No documents match your search.' : 'No supported documents found in Google Drive.'}
+                  <div style={{ padding: '30px 0', textAlign: 'center', color: '#94A3B8', fontSize: '12.5px' }}>
+                    No files found.
                   </div>
                 ) : (
                   driveFiles.map((f) => {
-                    const isSelected = selectedFile?.id === f.id;
+                    const isSelected = selectedFiles.some((selected) => selected.id === f.id);
                     const info = getFileInfo(f.fileType, f.name);
-                    const formattedDate = formatModifiedDate(f.modifiedTime);
                     const sizeStr = formatSize(f.size);
 
                     return (
                       <div
                         key={f.id}
-                        className={`gdrive-file-row ${isSelected ? 'selected' : ''}`}
-                        onClick={() => setSelectedFile(f)}
-                        role="option"
-                        aria-selected={isSelected}
-                        tabIndex={0}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            setSelectedFile(f);
-                          }
+                        onClick={() => toggleFileSelect(f)}
+                        style={{
+                          padding: '9px 12px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '10px',
+                          cursor: 'pointer',
+                          background: isSelected ? '#EFF6FF' : '#FFFFFF',
+                          borderBottom: '1px solid #F1F5F9',
+                          transition: 'background 0.1s ease'
                         }}
                       >
-                        <div className="gdrive-file-left">
-                          <div
-                            className="gdrive-file-icon-box"
-                            style={{ background: info.bg, color: info.color }}
-                          >
-                            {info.key === 'sheet' ? (
-                              <FileSpreadsheet size={18} />
-                            ) : info.key === 'file' ? (
-                              <File size={18} />
-                            ) : (
-                              <FileText size={18} />
-                            )}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+                          <div style={{
+                            padding: '6px',
+                            borderRadius: '6px',
+                            background: info.bg,
+                            color: info.color,
+                            flexShrink: 0,
+                            display: 'flex'
+                          }}>
+                            {info.icon}
                           </div>
-                          <div className="gdrive-file-info">
-                            <div className="gdrive-file-name" title={f.name}>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{
+                              fontSize: '12.5px',
+                              fontWeight: isSelected ? 600 : 500,
+                              color: isSelected ? '#1E40AF' : '#1E293B',
+                              whiteSpace: 'nowrap',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis'
+                            }}>
                               {f.name}
                             </div>
-                            <div className="gdrive-file-meta">
-                              <span className="gdrive-badge-type">{info.label}</span>
-                              <span>•</span>
-                              <span>{formattedDate}</span>
-                              {sizeStr && (
-                                <>
-                                  <span>•</span>
-                                  <span>{sizeStr}</span>
-                                </>
-                              )}
-                              {f.isGoogleNative && (
-                                <>
-                                  <span>•</span>
-                                  <span style={{ color: '#027A48' }}>Google Doc</span>
-                                </>
-                              )}
-                              {f.isImported && (
-                                <span className="gdrive-imported-pill">
-                                  Imported
-                                </span>
-                              )}
+                            <div style={{ fontSize: '11px', color: '#94A3B8' }}>
+                              {info.label} {sizeStr && `• ${sizeStr}`}
                             </div>
                           </div>
                         </div>
 
-                        <div className="gdrive-file-right">
-                          <div className={`gdrive-select-indicator ${isSelected ? 'selected' : ''}`}>
-                            <div className="gdrive-radio-circle">
-                              {isSelected && <div className="gdrive-radio-dot" />}
-                            </div>
-                            <span>
-                              {isSelected ? 'Selected' : 'Select'}
-                            </span>
-                          </div>
-                        </div>
+                        {isSelected ? (
+                          <CheckSquare size={18} color="#2563EB" style={{ flexShrink: 0 }} />
+                        ) : (
+                          <Square size={18} color="#CBD5E1" style={{ flexShrink: 0 }} />
+                        )}
                       </div>
                     );
                   })
                 )}
               </div>
-
-              {duplicateWarning && (
-                <div style={{ padding: '14px 16px', background: '#FEF3C7', border: '1px solid #FCD34D', borderRadius: '10px', marginTop: '14px' }}>
-                  <div style={{ fontSize: '13.5px', color: '#92400E', fontWeight: '600', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <AlertCircle size={18} />
-                    <span>{duplicateWarning}</span>
-                  </div>
-                  <div style={{ display: 'flex', gap: '10px' }}>
-                    <button
-                      type="button"
-                      onClick={() => handleImport(true)}
-                      style={{
-                        padding: '6px 14px',
-                        background: '#D97706',
-                        color: '#FFFFFF',
-                        border: 'none',
-                        borderRadius: '6px',
-                        fontSize: '13px',
-                        fontWeight: '600',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      Re-import Document
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setDuplicateWarning(null)}
-                      style={{
-                        padding: '6px 14px',
-                        background: 'transparent',
-                        border: '1px solid #D97706',
-                        color: '#92400E',
-                        borderRadius: '6px',
-                        fontSize: '13px',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              )}
             </>
           )}
 
+          {/* Progress message during batch execution */}
           {isImporting && (
-            <div className="upload-progress-container" style={{ margin: '14px 0' }}>
-              <div className="upload-progress-header">
-                <Loader2 size={16} className="spin upload-spinner" style={{ color: 'var(--primary)', flexShrink: 0 }} />
-                <span>
-                  {isLargeFile
-                    ? 'Just a moment, your file is large so it takes some time to extract text and diagrams...'
-                    : 'Uploading and processing document...'}
-                </span>
-              </div>
-              <div className="upload-progress-bar">
-                <div className="upload-progress-fill" />
-              </div>
+            <div style={{
+              marginTop: '12px',
+              padding: '10px 14px',
+              background: '#EFF6FF',
+              borderRadius: '8px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              fontSize: '12px',
+              color: '#1E40AF'
+            }}>
+              <Loader2 size={15} className="spin" />
+              <span>{importProgressText || 'Importing selected files...'}</span>
             </div>
           )}
 
@@ -539,46 +591,88 @@ export default function GoogleDriveModal({
             <div style={{
               display: 'flex',
               alignItems: 'center',
-              gap: '10px',
-              padding: '12px 14px',
+              gap: '8px',
+              padding: '9px 12px',
               background: '#FEF2F2',
-              border: '1px solid #FEE2E2',
               borderRadius: '8px',
-              color: 'var(--danger)',
-              fontSize: '13px',
+              color: '#DC2626',
+              fontSize: '12px',
               marginTop: '12px'
             }}>
-              <AlertCircle size={18} style={{ flexShrink: 0 }} />
-              <span>{errorMsg}</span>
+              <AlertCircle size={15} style={{ flexShrink: 0 }} />
+              <span style={{ whiteSpace: 'pre-line' }}>{errorMsg}</span>
             </div>
           )}
         </div>
 
+        {/* Footer */}
         {authStatus.authenticated && (
-          <div className="modal-footer-row">
+          <div style={{
+            padding: '14px 24px',
+            borderTop: '1px solid #F1F5F9',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            background: '#FAFAFA'
+          }}>
             <button
               type="button"
-              className="btn-modal-cancel"
-              onClick={onClose}
-              disabled={isImporting}
+              onClick={handleDisconnect}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#94A3B8',
+                fontSize: '11.5px',
+                cursor: 'pointer'
+              }}
             >
-              Cancel
+              Disconnect Drive
             </button>
-            <button
-              type="button"
-              className="btn-modal-primary"
-              onClick={() => handleImport(false)}
-              disabled={isImporting || !selectedFile}
-            >
-              {isImporting ? (
-                <>
-                  <Loader2 size={16} className="spin" />
-                  <span>Importing Selected...</span>
-                </>
-              ) : (
-                <span>Import Selected</span>
-              )}
-            </button>
+
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={isImporting}
+                style={{
+                  background: '#FFFFFF',
+                  border: '1px solid #CBD5E1',
+                  borderRadius: '7px',
+                  padding: '7px 14px',
+                  fontSize: '12.5px',
+                  fontWeight: 600,
+                  color: '#475467',
+                  cursor: 'pointer'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleBatchImport}
+                disabled={isImporting || selectedFiles.length === 0}
+                style={{
+                  background: selectedFiles.length > 0 ? '#2563EB' : '#94A3B8',
+                  border: 'none',
+                  borderRadius: '7px',
+                  padding: '7px 16px',
+                  fontSize: '12.5px',
+                  fontWeight: 600,
+                  color: '#FFFFFF',
+                  cursor: selectedFiles.length > 0 ? 'pointer' : 'not-allowed',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                {isImporting ? <Loader2 size={14} className="spin" /> : null}
+                <span>
+                  {selectedFiles.length > 0
+                    ? `Import (${selectedFiles.length}) Files`
+                    : 'Import Selected'}
+                </span>
+              </button>
+            </div>
           </div>
         )}
       </div>

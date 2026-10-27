@@ -56,8 +56,20 @@ const startServer = async () => {
     const stats = await vectorService.getStats();
     console.log(`[VectorIndex] Text ANN Vector Store active: ${stats.vectorCount} vectors indexed (Dim: ${stats.dimension})`);
 
-    // If documents exist without chunks, process them to ensure vector readiness
-    const unindexedDocs = await Document.find({ status: 'completed', totalChunks: { $in: [0, null] } });
+    // Check actual chunk count in DocumentChunk collection instead of relying on totalChunks null/0
+    const completedDocs = await Document.find({ status: 'completed' });
+    const unindexedDocs = [];
+
+    for (const d of completedDocs) {
+      const chunkCount = await DocumentChunk.countDocuments({ documentId: d._id });
+      if (chunkCount === 0) {
+        unindexedDocs.push(d);
+      } else if (!d.totalChunks || d.totalChunks !== chunkCount) {
+        // Sync chunk count in Document record to prevent redundant re-indexing
+        await Document.findByIdAndUpdate(d._id, { totalChunks: chunkCount });
+      }
+    }
+
     if (unindexedDocs.length > 0) {
       console.log(`[VectorIndex] Found ${unindexedDocs.length} existing document(s) needing vector chunking. Indexing now...`);
       for (const d of unindexedDocs) {
@@ -75,7 +87,7 @@ const startServer = async () => {
     console.log(`[ImageVectorIndex] Image ANN Vector Store active: ${imgStats.vectorCount} vectors indexed (Dim: ${imgStats.dimension})`);
 
     // Reconcile missing image vectors if Image documents exist in MongoDB but index is empty
-    const embeddedImagesCount = await Image.countDocuments({ siglipEmbedding: { $exists: true,$ne: [] } });
+    const embeddedImagesCount = await Image.countDocuments({ siglipEmbedding: { $exists: true, $ne: [] } });
     if (embeddedImagesCount > 0 && imgStats.vectorCount === 0) {
       console.log(`[ImageVectorIndex] Reconciling ${embeddedImagesCount} embedded images from MongoDB into local vector index...`);
       await imageVectorService.rebuild(Image);

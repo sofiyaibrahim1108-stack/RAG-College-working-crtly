@@ -149,7 +149,10 @@ export async function fetchDocuments(params = {}) {
   if (params.status) query.append('status', params.status);
   if (params.search) query.append('search', params.search);
 
-  const res = await fetch(`${API_BASE}/documents?${query.toString()}`, {
+  const queryString = query.toString();
+  const url = `${API_BASE}/documents${queryString ? `?${queryString}` : ''}`;
+
+  const res = await fetch(url, {
     headers: getAuthHeaders()
   });
   if (!res.ok) throw new Error('Failed to fetch documents');
@@ -213,6 +216,7 @@ export async function sendChatMessage({
       message,
       sessionId,
       departmentIds,
+      selectedDepartments: departmentIds,
       documentId,
       answerLength: mapAnswerLengthToPayload(answerLength),
       visualMode: mapVisualModeToPayload(visualMode)
@@ -249,6 +253,7 @@ export async function sendChatMessageStream({
       message,
       sessionId,
       departmentIds,
+      selectedDepartments: departmentIds,
       documentId,
       answerLength: mapAnswerLengthToPayload(answerLength),
       visualMode: mapVisualModeToPayload(visualMode),
@@ -422,7 +427,10 @@ export async function fetchDriveFiles(params = {}) {
   if (params.pageToken) query.append('pageToken', params.pageToken);
   if (params.pageSize) query.append('pageSize', params.pageSize);
 
-  const res = await fetch(`${API_BASE}/drive/files?${query.toString()}`, {
+  const queryString = query.toString();
+  const url = `${API_BASE}/drive/files${queryString ? `?${queryString}` : ''}`;
+
+  const res = await fetch(url, {
     headers: getAuthHeaders()
   });
   const data = await res.json();
@@ -536,4 +544,4 @@ export async function getFeedbackLogs(params = {}) {
     throw error;
   }
   return data;
-} 
+}

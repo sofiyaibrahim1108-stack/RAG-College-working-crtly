@@ -1,17 +1,17 @@
 const mongoose = require('mongoose');
 
-const documentSchema = new mongoose.Schema(
+const DocumentSchema = new mongoose.Schema(
   {
     originalFilename: {
       type: String,
-      required: [true, 'Original filename is required'],
+      required: true,
       trim: true
     },
     fileType: {
       type: String,
       required: true,
       lowercase: true,
-      trim: true // pdf, doc, docx, csv, xls, xlsx, txt, ppt, pptx
+      trim: true
     },
     fileSize: {
       type: Number,
@@ -19,15 +19,13 @@ const documentSchema = new mongoose.Schema(
     },
     storagePath: {
       type: String,
-      default: null
+      required: true
     },
-    // SHA-256 Hash for duplicate detection across uploads
     fileHash: {
       type: String,
-      default: null,
+      required: true,
       index: true
     },
-    // Version increment counter for updated files with the same filename
     version: {
       type: Number,
       default: 1
@@ -40,14 +38,13 @@ const documentSchema = new mongoose.Schema(
     driveFileId: {
       type: String,
       default: null,
-      sparse: true,
       index: true
     },
     driveMetadata: {
-      webViewLink: { type: String, default: null },
-      mimeType: { type: String, default: null },
-      modifiedTime: { type: Date, default: null },
-      exportMimeType: { type: String, default: null }
+      webViewLink: String,
+      mimeType: String,
+      modifiedTime: Date,
+      exportMimeType: String
     },
     departmentIds: [
       {
@@ -56,9 +53,14 @@ const documentSchema = new mongoose.Schema(
         index: true
       }
     ],
+    isPublic: {
+      type: Boolean,
+      default: false,
+      index: true
+    },
     status: {
       type: String,
-      enum: ['pending', 'processing', 'completed', 'failed'],
+      enum: ['pending', 'processing', 'completed', 'ready', 'failed'],
       default: 'pending',
       index: true
     },
@@ -66,32 +68,18 @@ const documentSchema = new mongoose.Schema(
       type: String,
       default: null
     },
-    totalChunks: {
+    chunkCount: {
       type: Number,
       default: 0
     },
-    metadata: {
-      pageCount: { type: Number, default: 0 },
-      slideCount: { type: Number, default: 0 },
-      sheetNames: [{ type: String }],
-      rowCount: { type: Number, default: 0 },
-      author: { type: String, default: null }
+    imageCount: {
+      type: Number,
+      default: 0
     }
   },
   {
-    timestamps: true,
-    toJSON: { virtuals: true },
-    toObject: { virtuals: true }
+    timestamps: true
   }
 );
 
-// Virtual to provide a unified processingStatus for frontend clients
-documentSchema.virtual('processingStatus').get(function () {
-  if (this.status === 'completed') return 'ready';
-  return this.status; // 'pending', 'processing', 'failed'
-});
-
-documentSchema.index({ departmentIds: 1, status: 1 });
-documentSchema.index({ fileHash: 1 });
-
-module.exports = mongoose.model('Document', documentSchema);
+module.exports = mongoose.model('Document', DocumentSchema);

@@ -17,7 +17,6 @@ const userSchema = new mongoose.Schema(
     },
     passwordHash: {
       type: String,
-      // required: [true, 'Password hash is required']
       default: null
     },
     role: {
@@ -69,7 +68,6 @@ const userSchema = new mongoose.Schema(
   }
 );
 
-// Indexes
 userSchema.index({ role: 1, departmentId: 1 });
 
 module.exports = mongoose.model('User', userSchema);

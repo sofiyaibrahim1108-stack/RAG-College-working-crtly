@@ -1,11 +1,11 @@
 const mongoose = require('mongoose');
 const Conversation = require('../models/Conversation');
 const Message = require('../models/Message');
+const User = require('../models/User');
 const { compiledRagGraph, filterSupportingSources } = require('../services/langgraph/workflow');
 const { PipelineTimer } = require('../utils/timer');
 const Feedback = require('../models/Feedback');
 
-// Opens a Server-Sent Events response.
 function openEventStream(res) {
   res.status(200);
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
@@ -29,7 +29,6 @@ function openEventStream(res) {
   return { send, end };
 }
 
-// POST /api/chat - Main RAG chat endpoint
 exports.sendMessage = async (req, res) => {
   let stream = null;
 
@@ -59,7 +58,41 @@ exports.sendMessage = async (req, res) => {
       ? new mongoose.Types.ObjectId(currentUserId)
       : null;
 
-    // 1. Session check: isolate cleanly if session is owned by another user or lacks an owner
+    // LEVEL 2 SECURITY ENFORCEMENT: RBAC Department Intersection
+    let allowedDepts = [];
+    let isUserAdmin = false;
+
+    if (req.user) {
+      isUserAdmin = req.user.role === 'admin';
+      
+      const userDepts = [];
+      if (req.user.departmentId) {
+        userDepts.push(String(req.user.departmentId));
+      }
+      if (Array.isArray(req.user.departmentIds)) {
+        req.user.departmentIds.forEach((id) => {
+          if (id) userDepts.push(String(id._id || id));
+        });
+      }
+      allowedDepts = Array.from(new Set(userDepts));
+    }
+
+    const requestedDepts = (Array.isArray(departmentIds) ? departmentIds : [departmentIds])
+      .filter(Boolean)
+      .map((id) => String(id));
+
+    let enforcedDepartments = [];
+
+    if (isUserAdmin) {
+      enforcedDepartments = requestedDepts;
+    } else {
+      if (requestedDepts.length > 0) {
+        enforcedDepartments = requestedDepts.filter((id) => allowedDepts.includes(id));
+      } else {
+        enforcedDepartments = allowedDepts;
+      }
+    }
+
     let conversation = await Conversation.findOne({ sessionId });
     
     const isOwnedByOther = conversation && conversation.userId && currentUserObjectId &&
@@ -74,7 +107,7 @@ exports.sendMessage = async (req, res) => {
         sessionId: targetSessionId,
         userId: currentUserObjectId || undefined,
         title: message.trim().slice(0, 40),
-        departmentContext: departmentIds
+        departmentContext: enforcedDepartments
       });
     } else {
       if (!conversation.userId && currentUserObjectId) {
@@ -84,7 +117,6 @@ exports.sendMessage = async (req, res) => {
       await conversation.save();
     }
 
-    // 2. Fetch recent conversation memory
     const rawPreviousMessages = await Message.find({ conversationId: conversation._id })
       .sort({ createdAt: -1 })
       .limit(6)
@@ -95,19 +127,17 @@ exports.sendMessage = async (req, res) => {
       content: m.content
     }));
 
-    // 3. Save User Message in MongoDB
     const userMessage = await Message.create({
       conversationId: conversation._id,
       role: 'user',
       content: message.trim()
     });
 
-    // 4. Build LangGraph Inputs
     const startTime = Date.now();
     const graphInput = {
       question: message.trim(),
       sessionId: conversation.sessionId,
-      selectedDepartments: departmentIds,
+      selectedDepartments: enforcedDepartments,
       documentId,
       messages: conversationHistory,
       conversationHistory
@@ -122,7 +152,6 @@ exports.sendMessage = async (req, res) => {
       graphInput.visualMode = null;
     }
 
-    // 5. Invoke LangGraph
     const graphConfig = {
       configurable: {
         onToken: stream ? (text) => stream.send('token', { text }) : null,
@@ -133,7 +162,6 @@ exports.sendMessage = async (req, res) => {
     const finalState = await compiledRagGraph.invoke(graphInput, graphConfig);
     const totalPipelineMs = Date.now() - startTime;
 
-    // Filter sources cited in the final answer
     const filteredResult = filterSupportingSources(
       finalState.answer,
       finalState.sources || [],
@@ -176,7 +204,6 @@ exports.sendMessage = async (req, res) => {
       similarityScore: img.similarityScore
     }));
 
-    // 6. Save Assistant Message in MongoDB
     const assistantMessage = await Message.create({
       conversationId: conversation._id,
       role: 'assistant',
@@ -203,7 +230,6 @@ exports.sendMessage = async (req, res) => {
       assistantMessageId: assistantMessage._id
     };
 
-    // 7. Deliver result
     if (stream) {
       stream.send('done', payload);
       stream.end();
@@ -231,7 +257,6 @@ exports.sendMessage = async (req, res) => {
   }
 };
 
-// GET /api/chat/history/:sessionId
 exports.getHistory = async (req, res) => {
   try {
     const { sessionId } = req.params;
@@ -266,7 +291,6 @@ exports.getHistory = async (req, res) => {
   }
 };
 
-// GET /api/chat/conversations
 exports.listConversations = async (req, res) => {
   try {
     const filter = {};
@@ -295,7 +319,6 @@ exports.listConversations = async (req, res) => {
   }
 };
 
-// DELETE /api/chat/conversations/:sessionId
 exports.deleteConversation = async (req, res) => {
   try {
     const { sessionId } = req.params;
@@ -328,7 +351,6 @@ exports.deleteConversation = async (req, res) => {
   }
 };
 
-// DELETE /api/chat/history/:sessionId/from/:messageId
 exports.truncateHistoryFrom = async (req, res) => {
   try {
     const { sessionId, messageId } = req.params;
@@ -355,7 +377,7 @@ exports.truncateHistoryFrom = async (req, res) => {
     if (targetMsg) {
       const result = await Message.deleteMany({
         conversationId: conversation._id,
-        $or: [{ _id: targetMsg._id }, { createdAt: {$gte: targetMsg.createdAt } }]
+        $or: [{ _id: targetMsg._id }, { createdAt: { $gte: targetMsg.createdAt } }]
       });
       return res.status(200).json({
         success: true,
@@ -371,7 +393,6 @@ exports.truncateHistoryFrom = async (req, res) => {
   }
 };
 
-// POST /api/chat/feedback - Record user thumbs up / down
 exports.submitFeedback = async (req, res) => {
   try {
     const {
@@ -455,7 +476,6 @@ exports.submitFeedback = async (req, res) => {
   }
 };
 
-// GET /api/chat/feedback - Admin audit listing for feedback
 exports.listFeedback = async (req, res) => {
   try {
     const page = parseInt(req.query.page, 10) || 1;

@@ -271,14 +271,22 @@ export default function App() {
   const [isAuthChecking, setIsAuthChecking] = useState(true);
   const [showAuthModal, setShowAuthModal] = useState(false);
 
-  // Active Chat State
+  // Active Chat State with Ref-backed department synchronization
   const [activeConvId, setActiveConvId] = useState('session-default');
   const [messages, setMessages] = useState([]);
   const [inputQuery, setInputQuery] = useState('');
   const [editingMessage, setEditingMessage] = useState(null);
   const [isSending, setIsSending] = useState(false);
   const [regeneratingId, setRegeneratingId] = useState(null);
+  
   const [selectedDepartmentId, setSelectedDepartmentId] = useState(null);
+  const selectedDepartmentIdRef = useRef(null);
+
+  const handleSelectDepartment = (deptId) => {
+    setSelectedDepartmentId(deptId);
+    selectedDepartmentIdRef.current = deptId;
+  };
+
   const [answerLength, setAnswerLength] = useState('Auto');
   const answerLengthRef = useRef(answerLength);
 
@@ -400,12 +408,10 @@ export default function App() {
     setMessages([]);
     const data = await loginUser(credentials);
     
-    // Explicitly persist token returned by the login endpoint
     if (data.token) {
       setAuthToken(data.token);
     }
     
-    // Use user details returned directly from the response
     const activeUser = data.user;
     setCurrentUser(activeUser);
 
@@ -652,27 +658,31 @@ export default function App() {
     }
   }, []);
 
-  useEffect(() => {
-    const hasActiveProcessing = documents.some((d) => {
-      const s = (d.status || d.processingStatus || '').toLowerCase();
-      return s === 'processing' || s === 'pending';
-    });
+  // Background document status polling: strictly triggered only when documents are actively processing
+  const docsProcessingRef = useRef(false);
+  docsProcessingRef.current = documents.some((d) => {
+    const s = String(d.status || d.processingStatus || '').toLowerCase();
+    return s === 'processing' || s === 'pending';
+  });
 
-    if (!hasActiveProcessing) return;
+  useEffect(() => {
+    if (!currentUser || currentUser.role !== 'admin') return;
 
     const intervalId = setInterval(async () => {
+      if (!docsProcessingRef.current) return;
+
       try {
         const docsData = await fetchDocuments();
         if (docsData && docsData.data) {
           setDocuments(docsData.data);
         }
       } catch (err) {
-        console.warn('Background document polling failed:', err.message);
+        // Silently catch background fetch errors
       }
-    }, 3000);
+    }, 5000);
 
     return () => clearInterval(intervalId);
-  }, [documents]);
+  }, [currentUser]);
 
   const stopRecoveryPolling = () => {
     if (pollingTimerRef.current) {
@@ -1138,7 +1148,9 @@ export default function App() {
     });
 
     try {
-      const departmentIds = selectedDepartmentId ? [selectedDepartmentId] : [];
+      // Prioritize the latest ref value to eliminate stale closure omissions
+      const activeDept = selectedDepartmentIdRef.current || selectedDepartmentId;
+      const departmentIds = activeDept ? [String(activeDept)] : [];
 
       const controller = new AbortController();
       abortControllerRef.current = controller;
@@ -1147,6 +1159,7 @@ export default function App() {
         message: query,
         sessionId: requestSessionId,
         departmentIds,
+        selectedDepartments: departmentIds,
         answerLength: answerLengthRef.current,
         visualMode: messageVisualMode,
         signal: controller.signal,
@@ -1169,7 +1182,6 @@ export default function App() {
 
       if (activeRequestIdRef.current !== currentRequestId) return;
 
-      // Update sessionId if server assigned an isolated session
       const returnedSessionId = res.sessionId || res.data?.sessionId;
       if (returnedSessionId && returnedSessionId !== requestSessionId) {
         setActiveConvId(returnedSessionId);
@@ -1207,7 +1219,6 @@ export default function App() {
           : [...prev, assistantMsg]
       );
 
-      // Re-fetch conversation list to persist the generated title in the sidebar
       try {
         const convsRes = await fetchConversations();
         if (convsRes.data && Array.isArray(convsRes.data)) {
@@ -1361,7 +1372,8 @@ export default function App() {
     let firstTokenSeen = false;
 
     try {
-      const departmentIds = selectedDepartmentId ? [selectedDepartmentId] : [];
+      const activeDept = selectedDepartmentIdRef.current || selectedDepartmentId;
+      const departmentIds = activeDept ? [String(activeDept)] : [];
 
       const controller = new AbortController();
       abortControllerRef.current = controller;
@@ -1370,6 +1382,7 @@ export default function App() {
         message: userQuery,
         sessionId: requestSessionId,
         departmentIds,
+        selectedDepartments: departmentIds,
         answerLength: answerLengthRef.current,
         visualMode: null,
         signal: controller.signal,
@@ -1610,7 +1623,7 @@ export default function App() {
     }
   };
 
-  const activeDeptObj = departments.find((d) => d._id === selectedDepartmentId);
+  const activeDeptObj = departments.find((d) => (d._id || d.id) === selectedDepartmentId);
   const activeDeptName = activeDeptObj ? activeDeptObj.code : null;
 
   if (isAuthChecking) {
@@ -1669,24 +1682,25 @@ export default function App() {
 
       {/* 2. Main Content Viewport */}
       <main className="main-viewport">
-        <ChatHeader
-          departments={departments}
-          selectedDepartmentId={selectedDepartmentId}
-          setSelectedDepartmentId={setSelectedDepartmentId}
-          onToggleSidebar={handleToggleSidebar}
-          isSidebarCollapsed={isSidebarCollapsed}
-          activeViewTitle={
-            activeView === 'documents'
-              ? 'Knowledge Base'
-              : activeView === 'departments'
-                ? 'Departments'
-                : activeView === 'users'
-                  ? 'User Management'
-                  : activeView === 'audit-logs'
-                    ? 'Security & Audit Logs'
-                    : null
-          }
-        />
+       <ChatHeader
+  departments={departments}
+  selectedDepartmentId={selectedDepartmentId}
+  setSelectedDepartmentId={handleSelectDepartment}
+  onToggleSidebar={handleToggleSidebar}
+  isSidebarCollapsed={isSidebarCollapsed}
+  currentUser={currentUser}
+  activeViewTitle={
+    activeView === 'documents'
+      ? 'Knowledge Base'
+      : activeView === 'departments'
+        ? 'Departments'
+        : activeView === 'users'
+          ? 'User Management'
+          : activeView === 'audit-logs'
+            ? 'Security & Audit Logs'
+            : null
+  }
+/>
 
         {/* View Router */}
         {activeView === 'chat' && (

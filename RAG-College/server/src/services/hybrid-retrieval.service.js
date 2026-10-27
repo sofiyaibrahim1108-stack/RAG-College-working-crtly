@@ -7,14 +7,6 @@ const RRF_K = parseInt(process.env.RAG_RRF_K || '60', 10);
 
 /**
  * Apply Reciprocal Rank Fusion (RRF) on dense vector and keyword search candidates
- *
- * Formula:
- *   RRF Score = [1 / (RRF_K + denseRank)] + [1 / (RRF_K + keywordRank)]
- *
- * @param {Array<Object>} denseCandidates - Ranked vector search candidates
- * @param {Array<Object>} keywordCandidates - Ranked keyword search candidates
- * @param {number} [rrfK=RRF_K] - Smoothing constant
- * @returns {Array<Object>} Deduplicated candidates sorted by descending RRF score
  */
 function applyReciprocalRankFusion(denseCandidates = [], keywordCandidates = [], rrfK = RRF_K) {
   const fusionMap = new Map();
@@ -87,7 +79,6 @@ async function retrieveHybridChunks({
 }) {
   const tTotalStart = Date.now();
 
-  // Candidate pool expanded to 40 to prevent tabular/seat data chunks from being crowded out
   const defaultPool = 60;
   const poolLimit = candidateLimit || defaultPool;
   const candidatePoolSize = Math.min(Math.max(poolLimit, 40), 100);
@@ -97,6 +88,10 @@ async function retrieveHybridChunks({
   let vectorRetrievalMs = 0;
   let keywordRetrievalMs = 0;
 
+  // NOTE: Pre-filtering by departmentId at vector/keyword layer wipes out isPublic files!
+  // We pass null for departmentIds to retrieve broader candidates, then enforce strict
+  // Level 2 Security (Selected Dept + Public Files) in Step 5.
+  
   // 1. Dense Semantic Vector Search
   const tVecStart = Date.now();
   try {
@@ -104,7 +99,7 @@ async function retrieveHybridChunks({
       denseCandidates = await vectorService.search(
         queryEmbedding,
         candidatePoolSize,
-        departmentIds,
+        null, // Pass null so public files are never excluded early
         documentId
       );
     }
@@ -118,7 +113,7 @@ async function retrieveHybridChunks({
   const tKwStart = Date.now();
   try {
     keywordCandidates = await searchKeywords(question, {
-      departmentIds,
+      departmentIds: null, // Pass null so public circulars match keyword terms
       documentId,
       limit: candidatePoolSize
     });
@@ -138,15 +133,17 @@ async function retrieveHybridChunks({
 
   if (candidateChunkIds.length > 0) {
     chunksFromDb = await DocumentChunk.find({ _id: { $in: candidateChunkIds } })
-      .populate('documentId', 'originalFilename source driveFileId driveMetadata')
+      .populate('documentId', 'originalFilename source isPublic departmentIds driveFileId driveMetadata')
       .lean();
   }
 
-  // 5. Enforce department isolation
+  // 5. Enforce department isolation & Public file access
   let targetDeptSet = null;
   if (departmentIds && Array.isArray(departmentIds) && departmentIds.length > 0) {
     targetDeptSet = new Set(departmentIds.map((d) => (d && d._id ? d._id.toString() : d.toString())));
   }
+
+  console.log('[DEBUG ISOLATION FILTER] targetDeptSet:', targetDeptSet ? Array.from(targetDeptSet) : 'ALL/NONE');
 
   const finalChunks = [];
   for (const item of fusedList) {
@@ -154,10 +151,22 @@ async function retrieveHybridChunks({
     if (!chunkDoc) continue;
 
     if (targetDeptSet) {
-      const chunkDepts = (chunkDoc.departmentIds || []).map((d) => (d._id || d).toString());
-      const hasDeptAccess = chunkDepts.some((d) => targetDeptSet.has(d));
-      if (!hasDeptAccess) {
-        continue;
+      const parentDoc = chunkDoc.documentId || {};
+      const isPublic = Boolean(chunkDoc.isPublic || parentDoc.isPublic);
+
+      // Public documents remain accessible across all department views
+      if (!isPublic) {
+        const rawDepts = [
+          ...(chunkDoc.departmentIds || []),
+          ...(parentDoc.departmentIds || [])
+        ];
+        const chunkDepts = rawDepts.map((d) => (d._id || d).toString());
+        const hasDeptAccess = chunkDepts.some((d) => targetDeptSet.has(d));
+
+        if (!hasDeptAccess) {
+          // Exclude document from other departments
+          continue;
+        }
       }
     }
 

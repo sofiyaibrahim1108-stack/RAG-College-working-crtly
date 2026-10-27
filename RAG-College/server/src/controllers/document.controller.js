@@ -33,6 +33,9 @@ exports.uploadDocuments = async (req, res) => {
       });
     }
 
+    // Parse isPublic flag from body (string 'true' or boolean true)
+    const isPublic = req.body.isPublic === true || req.body.isPublic === 'true';
+
     // Parse departmentIds (JSON array string, comma-separated, or single ID)
     let departmentIds = req.body.departmentIds;
     if (typeof departmentIds === 'string') {
@@ -43,26 +46,29 @@ exports.uploadDocuments = async (req, res) => {
       }
     }
 
-    if (!Array.isArray(departmentIds) || departmentIds.length === 0) {
+    // If document is private, at least one department is mandatory
+    if (!isPublic && (!Array.isArray(departmentIds) || departmentIds.length === 0)) {
       req.files.forEach((f) => {
         if (fs.existsSync(f.path)) fs.unlinkSync(f.path);
       });
       return res.status(400).json({
         success: false,
-        message: 'At least one department must be selected'
+        message: 'Please select at least one department for private documents, or mark the document as Public.'
       });
     }
 
-    // Validate that departmentIds exist in the database
+    // Validate that departmentIds exist in the database (if provided)
     const validDepts = [];
-    for (const dId of departmentIds) {
-      if (mongoose.Types.ObjectId.isValid(dId)) {
-        const dept = await Department.findById(dId);
-        if (dept) validDepts.push(dept._id);
+    if (Array.isArray(departmentIds)) {
+      for (const dId of departmentIds) {
+        if (mongoose.Types.ObjectId.isValid(dId)) {
+          const dept = await Department.findById(dId);
+          if (dept) validDepts.push(dept._id);
+        }
       }
     }
 
-    if (validDepts.length === 0) {
+    if (!isPublic && validDepts.length === 0) {
       req.files.forEach((f) => {
         if (fs.existsSync(f.path)) fs.unlinkSync(f.path);
       });
@@ -127,6 +133,7 @@ exports.uploadDocuments = async (req, res) => {
         version,
         source: 'upload',
         departmentIds: validDepts,
+        isPublic,
         status: 'processing'
       });
       createdDocs.push(doc);
@@ -150,7 +157,8 @@ exports.uploadDocuments = async (req, res) => {
         filenames: createdDocs.map((d) => d.originalFilename),
         skippedDuplicatesCount: skippedDuplicates.length,
         skippedFiles: skippedDuplicates.map((d) => d.filename),
-        departmentIds: validDepts
+        departmentIds: validDepts,
+        isPublic
       }
     });
 
@@ -172,7 +180,6 @@ exports.uploadDocuments = async (req, res) => {
       try {
         console.log(`\n[Ingestion] >>> Started background ingestion for ${docIds.length} file(s)...`);
 
-        // Concurrency 1 ensures stable local vector index writing without collision
         await processDocumentsBatch(docIds, 1);
 
         const ingestDuration = Date.now() - ingestStart;
@@ -208,7 +215,7 @@ exports.uploadDocuments = async (req, res) => {
 // GET /api/documents - List documents with optional filters
 exports.getDocuments = async (req, res) => {
   try {
-    const { departmentId, status, search } = req.query;
+    const { departmentId, status, search, isPublic } = req.query;
     const query = {};
 
     if (departmentId && mongoose.Types.ObjectId.isValid(departmentId)) {
@@ -217,6 +224,10 @@ exports.getDocuments = async (req, res) => {
 
     if (status) {
       query.status = status;
+    }
+
+    if (isPublic !== undefined) {
+      query.isPublic = isPublic === 'true' || isPublic === true;
     }
 
     if (search) {

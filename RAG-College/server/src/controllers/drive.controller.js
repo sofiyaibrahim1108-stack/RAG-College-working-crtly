@@ -186,6 +186,7 @@ exports.getFileMetadata = async (req, res) => {
 exports.importFile = async (req, res) => {
   try {
     const { fileId, forceReimport, simulatedFilePath } = req.body;
+    const isPublic = req.body.isPublic === true || req.body.isPublic === 'true';
     let departmentIds = req.body.departmentIds;
 
     if (!fileId || typeof fileId !== 'string') {
@@ -220,22 +221,24 @@ exports.importFile = async (req, res) => {
       }
     }
 
-    if (!Array.isArray(departmentIds) || departmentIds.length === 0) {
+    if (!isPublic && (!Array.isArray(departmentIds) || departmentIds.length === 0)) {
       return res.status(400).json({
         success: false,
-        message: 'At least one department must be selected for the imported document'
+        message: 'Please select at least one department for private documents, or mark the document as Public.'
       });
     }
 
     const validDeptIds = [];
-    for (const dId of departmentIds) {
-      if (mongoose.Types.ObjectId.isValid(dId)) {
-        const dept = await Department.findById(dId);
-        if (dept) validDeptIds.push(dept._id);
+    if (Array.isArray(departmentIds)) {
+      for (const dId of departmentIds) {
+        if (mongoose.Types.ObjectId.isValid(dId)) {
+          const dept = await Department.findById(dId);
+          if (dept) validDeptIds.push(dept._id);
+        }
       }
     }
 
-    if (validDeptIds.length === 0) {
+    if (!isPublic && validDeptIds.length === 0) {
       return res.status(400).json({
         success: false,
         message: 'None of the provided department IDs exist in the database'
@@ -309,6 +312,7 @@ exports.importFile = async (req, res) => {
         exportMimeType: downloaded.exportMimeType
       };
       existingDoc.departmentIds = validDeptIds;
+      existingDoc.isPublic = isPublic;
       existingDoc.status = 'pending';
       doc = await existingDoc.save();
     } else {
@@ -328,6 +332,7 @@ exports.importFile = async (req, res) => {
           exportMimeType: downloaded.exportMimeType
         },
         departmentIds: validDeptIds,
+        isPublic,
         status: 'pending'
       });
       await doc.save();

@@ -5,7 +5,11 @@ import {
   Check,
   AlertCircle,
   Loader2,
-  Trash2
+  Trash2,
+  Globe,
+  Lock,
+  Building2,
+  CheckCircle2
 } from 'lucide-react';
 import MultiSelectDropdown from './MultiSelectDropdown';
 import { getFriendlyErrorMessage } from '../utils/errorHandler';
@@ -21,6 +25,7 @@ export default function UploadModal({
 }) {
   const [stagedFiles, setStagedFiles] = useState([]);
   const [selectedDeptIds, setSelectedDeptIds] = useState([]);
+  const [isPublic, setIsPublic] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isLargeFile, setIsLargeFile] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -31,9 +36,9 @@ export default function UploadModal({
   const deptDropdownRef = useRef(null);
 
   const isReupload = !!reuploadDoc;
-  const LARGE_FILE_THRESHOLD = 2 * 1024 * 1024; // 2 MB
-  const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25 MB max per file
-  const MAX_BATCH_FILES = 10; // Max 10 files per batch
+  const LARGE_FILE_THRESHOLD = 2 * 1024 * 1024;
+  const MAX_FILE_SIZE = 25 * 1024 * 1024;
+  const MAX_BATCH_FILES = 10;
 
   const supportedExtensions = ['.pdf', '.doc', '.docx', '.csv', '.xls', '.xlsx', '.txt', '.ppt', '.pptx'];
 
@@ -41,6 +46,8 @@ export default function UploadModal({
     if (isUploading) return;
     setStagedFiles([]);
     setIsLargeFile(false);
+    setIsPublic(false);
+    setSelectedDeptIds([]);
     setErrorMsg('');
     setDeptError('');
     onClose();
@@ -53,6 +60,7 @@ export default function UploadModal({
       setIsUploading(false);
       setErrorMsg('');
       setDeptError('');
+      setIsPublic(Boolean(reuploadDoc?.isPublic));
       setSelectedDeptIds(reuploadDoc?.departmentIds ? [...reuploadDoc.departmentIds] : []);
     }
   }, [isOpen, reuploadDoc]);
@@ -68,48 +76,28 @@ export default function UploadModal({
 
   const totalBatchSize = stagedFiles.reduce((acc, f) => acc + (f.size || 0), 0);
 
-  const getFileBadge = (name = '') => {
-    const ext = (name.split('.').pop() || '').toLowerCase();
-    if (ext === 'pdf') return { label: 'PDF', bg: '#FEE4E2', color: '#B42318' };
-    if (['xlsx', 'xls', 'csv'].includes(ext)) return { label: ext.toUpperCase(), bg: '#D1FADF', color: '#027A48' };
-    if (['pptx', 'ppt'].includes(ext)) return { label: ext.toUpperCase(), bg: '#FEF0C7', color: '#B54708' };
-    if (['docx', 'doc'].includes(ext)) return { label: ext.toUpperCase(), bg: '#D1E9FF', color: '#175CD3' };
-    if (ext === 'txt') return { label: 'TXT', bg: '#EAECF0', color: '#344054' };
-    return { label: ext ? ext.toUpperCase() : 'DOC', bg: '#F2F4F7', color: '#475467' };
-  };
-
   const handleFiles = (incomingFiles) => {
     setErrorMsg('');
     const newValidFiles = [];
     const incomingArray = Array.from(incomingFiles);
 
     if (!isReupload && stagedFiles.length + incomingArray.length > MAX_BATCH_FILES) {
-      setErrorMsg(`You can upload a maximum of ${MAX_BATCH_FILES} documents per batch.`);
+      setErrorMsg(`Max ${MAX_BATCH_FILES} files allowed.`);
       return;
     }
 
     for (const file of incomingArray) {
       const ext = '.' + file.name.split('.').pop().toLowerCase();
-
       if (!supportedExtensions.includes(ext)) {
-        setErrorMsg(`"${file.name}" has an unsupported format. Allowed formats: PDF, DOCX, XLSX, PPTX, TXT, CSV.`);
+        setErrorMsg(`"${file.name}" has an unsupported format.`);
         continue;
       }
-
-      if (file.size === 0) {
-        setErrorMsg(`"${file.name}" is empty (0 bytes) and cannot be processed.`);
-        continue;
-      }
-
       if (file.size > MAX_FILE_SIZE) {
-        setErrorMsg(`"${file.name}" exceeds the 25 MB limit (${formatSize(file.size)}).`);
+        setErrorMsg(`"${file.name}" exceeds 25 MB.`);
         continue;
       }
-
       const isDuplicate = stagedFiles.some((f) => f.name === file.name && f.size === file.size);
-      if (!isDuplicate) {
-        newValidFiles.push(file);
-      }
+      if (!isDuplicate) newValidFiles.push(file);
     }
 
     if (newValidFiles.length > 0) {
@@ -119,34 +107,19 @@ export default function UploadModal({
     }
   };
 
-  const handleRemoveFile = (index) => {
-    setStagedFiles((prev) => {
-      const nextFiles = prev.filter((_, idx) => idx !== index);
-      setIsLargeFile(nextFiles.some((f) => f.size > LARGE_FILE_THRESHOLD));
-      return nextFiles;
-    });
-  };
-
-  const handleClearAll = () => {
-    setStagedFiles([]);
-    setIsLargeFile(false);
-    setErrorMsg('');
-  };
-
   const handleUploadSubmit = async () => {
-    if (selectedDeptIds.length === 0) {
-      setDeptError('Select at least one department');
+    if (!isPublic && selectedDeptIds.length === 0) {
+      setDeptError('Please assign at least 1 department.');
       deptDropdownRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       deptDropdownRef.current?.focus();
       return;
     }
 
     if (stagedFiles.length === 0) {
-      setErrorMsg('Please select at least one document to upload.');
+      setErrorMsg('Please select a document to upload.');
       return;
     }
 
-    setIsLargeFile(stagedFiles.some((f) => f.size > LARGE_FILE_THRESHOLD));
     setIsUploading(true);
     setErrorMsg('');
     setDeptError('');
@@ -154,36 +127,20 @@ export default function UploadModal({
     try {
       if (isReupload) {
         await onReupload(reuploadDoc, stagedFiles[0], selectedDeptIds);
-        setStagedFiles([]);
-        setIsLargeFile(false);
-        setSelectedDeptIds([]);
-        onClose();
+        handleClose();
         return;
       }
 
       const formData = new FormData();
-      stagedFiles.forEach((file) => {
-        formData.append('files', file);
-      });
-
+      stagedFiles.forEach((f) => formData.append('files', f));
       formData.append('departmentIds', JSON.stringify(selectedDeptIds));
+      formData.append('isPublic', String(isPublic));
 
       await onUploadSuccess(formData);
-
-      if (onToast) {
-        onToast(`Uploaded ${stagedFiles.length} ${stagedFiles.length === 1 ? 'document' : 'documents'} successfully!`, 'success');
-      }
-
-      setStagedFiles([]);
-      setIsLargeFile(false);
-      setSelectedDeptIds([]);
-      setDeptError('');
-      onClose();
+      if (onToast) onToast('Documents uploaded successfully!', 'success');
+      handleClose();
     } catch (err) {
-      console.error('Upload failed:', err);
-      const serverMessage = err.response?.data?.message || err.message;
-      setErrorMsg(serverMessage || getFriendlyErrorMessage(err, 'upload'));
-      setIsLargeFile(false);
+      setErrorMsg(getFriendlyErrorMessage(err, 'upload'));
     } finally {
       setIsUploading(false);
     }
@@ -192,72 +149,148 @@ export default function UploadModal({
   return (
     <div className="modal-backdrop" onClick={handleClose}>
       <div
-        className="modal-container upload-modal"
+        className="modal-container"
+        style={{
+          maxWidth: '540px',
+          width: '92%',
+          background: '#FFFFFF',
+          borderRadius: '16px',
+          boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05)',
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column'
+        }}
         onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="upload-modal-title"
       >
-        <div className="modal-header-row">
-          <div className="modal-header-text">
-            <h2 id="upload-modal-title" className="modal-header-title">
-              {isReupload ? 'Re-upload Document' : 'Upload Documents'}
+        {/* Header */}
+        <div style={{
+          padding: '18px 24px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          borderBottom: '1px solid #F1F5F9'
+        }}>
+          <div>
+            <h2 style={{ fontSize: '16px', fontWeight: 700, color: '#0F172A', margin: 0 }}>
+              {isReupload ? 'Replace Document' : 'Upload Documents'}
             </h2>
-            <p className="modal-header-subtitle">
-              {isReupload
-                ? `Select a replacement file for "${reuploadDoc.filename || reuploadDoc.originalFilename || reuploadDoc.originalName || 'this document'}"`
-                : 'Upload up to 10 files (max 25 MB each) to your college knowledge base'}
+            <p style={{ fontSize: '12.5px', color: '#64748B', margin: '2px 0 0' }}>
+              Add PDF, Word, Excel, or Text files to the knowledge base
             </p>
           </div>
           <button
             type="button"
-            className="btn-modal-close-icon"
             onClick={handleClose}
             disabled={isUploading}
-            aria-label="Close upload dialog"
+            style={{
+              background: '#F8FAFC',
+              border: 'none',
+              borderRadius: '8px',
+              padding: '6px',
+              cursor: 'pointer',
+              color: '#64748B'
+            }}
           >
             <X size={18} />
           </button>
         </div>
 
-        <div className="modal-content-body upload-modal-body">
-          <MultiSelectDropdown
-            ref={deptDropdownRef}
-            label="Department"
-            required={true}
-            options={departments}
-            selectedIds={selectedDeptIds}
-            onChange={(newIds) => {
-              setSelectedDeptIds(newIds);
-              if (newIds.length > 0) setDeptError('');
-            }}
-            error={deptError}
-            placeholder="Select departments"
-            id="upload-dept-select"
-          />
+        {/* Content */}
+        <div style={{ padding: '20px 24px', overflowY: 'auto', maxHeight: '70vh' }}>
+          {/* Segmented Control Bar */}
+          <div style={{
+            background: '#F8FAFC',
+            padding: '10px 14px',
+            borderRadius: '10px',
+            border: '1px solid #E2E8F0',
+            marginBottom: '16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {isPublic ? <Globe size={16} color="#16A34A" /> : <Lock size={16} color="#475467" />}
+              <span style={{ fontSize: '12.5px', fontWeight: 600, color: '#334155' }}>
+                {isPublic ? 'Public (All Departments)' : 'Department Private Access'}
+              </span>
+            </div>
 
+            <div style={{ display: 'flex', background: '#E2E8F0', padding: '2px', borderRadius: '7px' }}>
+              <button
+                type="button"
+                onClick={() => { setIsPublic(false); setDeptError(''); }}
+                style={{
+                  border: 'none',
+                  padding: '4px 12px',
+                  borderRadius: '5px',
+                  fontSize: '11.5px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  background: !isPublic ? '#FFFFFF' : 'transparent',
+                  color: !isPublic ? '#0F172A' : '#64748B',
+                  boxShadow: !isPublic ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+                }}
+              >
+                Private
+              </button>
+              <button
+                type="button"
+                onClick={() => { setIsPublic(true); setSelectedDeptIds([]); setDeptError(''); }}
+                style={{
+                  border: 'none',
+                  padding: '4px 12px',
+                  borderRadius: '5px',
+                  fontSize: '11.5px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  background: isPublic ? '#16A34A' : 'transparent',
+                  color: isPublic ? '#FFFFFF' : '#64748B',
+                  boxShadow: isPublic ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+                }}
+              >
+                Public
+              </button>
+            </div>
+          </div>
+
+          {/* Department Select if Private */}
+          {!isPublic && (
+            <div style={{ marginBottom: '16px' }}>
+              <MultiSelectDropdown
+                ref={deptDropdownRef}
+                label="Assign Target Department(s)"
+                required={true}
+                options={departments}
+                selectedIds={selectedDeptIds}
+                onChange={(ids) => {
+                  setSelectedDeptIds(ids);
+                  if (ids.length > 0) setDeptError('');
+                }}
+                error={deptError}
+                placeholder="Choose 1 or more departments..."
+                id="upload-dept-select"
+              />
+            </div>
+          )}
+
+          {/* Dropzone */}
           <div
             className={`upload-dropzone ${isDragging ? 'dragging' : ''}`}
-            onDragOver={(e) => {
-              e.preventDefault();
-              setIsDragging(true);
-            }}
+            onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
             onDragLeave={() => setIsDragging(false)}
             onDrop={(e) => {
               e.preventDefault();
               setIsDragging(false);
-              if (e.dataTransfer.files) {
-                handleFiles(e.dataTransfer.files);
-              }
+              if (e.dataTransfer.files) handleFiles(e.dataTransfer.files);
             }}
             onClick={() => fileInputRef.current?.click()}
-            role="button"
-            tabIndex={0}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                fileInputRef.current?.click();
-              }
+            style={{
+              padding: '24px 16px',
+              border: isDragging ? '2px dashed #2563EB' : '2px dashed #E2E8F0',
+              borderRadius: '12px',
+              textAlign: 'center',
+              cursor: 'pointer',
+              background: isDragging ? '#EFF6FF' : '#FAFAFA'
             }}
           >
             <input
@@ -265,115 +298,59 @@ export default function UploadModal({
               type="file"
               multiple={!isReupload}
               accept={supportedExtensions.join(',')}
-              className="upload-file-input"
+              style={{ display: 'none' }}
               onChange={(e) => {
                 if (e.target.files) handleFiles(e.target.files);
                 e.target.value = null;
               }}
-              tabIndex={-1}
             />
-            <div className="upload-dropzone-icon">
-              <UploadCloud size={34} strokeWidth={1.8} />
+            <UploadCloud size={30} color="#2563EB" style={{ margin: '0 auto 8px' }} />
+            <div style={{ fontSize: '13px', fontWeight: 600, color: '#1E293B' }}>
+              Click to browse or drag & drop files
             </div>
-            <div className="upload-dropzone-title">
-              {isReupload ? 'Drag & drop replacement document here' : 'Drag & drop documents here (Multiple files allowed)'}
-            </div>
-            <div className="upload-dropzone-divider">
-              <span>or</span>
-            </div>
-            <button
-              type="button"
-              className="upload-choose-file-btn"
-              onClick={(e) => {
-                e.stopPropagation();
-                fileInputRef.current?.click();
-              }}
-            >
-              Choose Files
-            </button>
-            <div className="upload-dropzone-formats">
-              PDF • DOCX • XLSX • PPTX • TXT • CSV (Max 25 MB per file)
+            <div style={{ fontSize: '11.5px', color: '#94A3B8', marginTop: '4px' }}>
+              PDF, DOCX, XLSX, TXT, CSV (up to 25 MB)
             </div>
           </div>
 
+          {/* Staged Files Cards */}
           {stagedFiles.length > 0 && (
-            <div className="upload-selected-section">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                <div className="upload-selected-title" style={{ margin: 0 }}>
-                  Selected Files ({stagedFiles.length}/{MAX_BATCH_FILES}) • {formatSize(totalBatchSize)}
-                </div>
-                {!isUploading && stagedFiles.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={handleClearAll}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      color: 'var(--danger, #D92D20)',
-                      fontSize: '12px',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px'
-                    }}
-                  >
-                    <Trash2 size={13} />
-                    Clear all
-                  </button>
-                )}
-              </div>
-
-              <div className="upload-staged-list" style={{ maxHeight: '180px', overflowY: 'auto' }}>
-                {stagedFiles.map((file, idx) => {
-                  const badge = getFileBadge(file.name);
-                  return (
-                    <div key={idx} className="upload-staged-card">
-                      <div className="upload-staged-left">
-                        <div className="upload-staged-check">
-                          <Check size={14} strokeWidth={2.4} />
-                        </div>
-                        <div className="upload-staged-info">
-                          <div className="upload-staged-name" title={file.name}>
-                            {file.name}
-                          </div>
-                          <div className="upload-staged-meta">
-                            <span className="upload-staged-type" style={{ background: badge.bg, color: badge.color }}>
-                              {badge.label}
-                            </span>
-                            <span>•</span>
-                            <span>{formatSize(file.size)}</span>
-                          </div>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        className="btn-remove-staged"
-                        onClick={() => handleRemoveFile(idx)}
-                        disabled={isUploading}
-                        title="Remove file"
-                        aria-label={`Remove ${file.name}`}
-                      >
-                        <X size={15} />
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {isUploading && (
-            <div className="upload-progress-container" style={{ marginTop: '14px' }}>
-              <div className="upload-progress-header">
-                <Loader2 size={16} className="spin upload-spinner" style={{ color: 'var(--primary)', flexShrink: 0 }} />
-                <span>
-                  {isLargeFile
-                    ? `Processing ${stagedFiles.length} file(s). Extracting text, tables, and embeddings...`
-                    : `Uploading and ingesting ${stagedFiles.length} file(s)...`}
+            <div style={{ marginTop: '14px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#64748B', marginBottom: '6px' }}>
+                <span>Selected ({stagedFiles.length}) • {formatSize(totalBatchSize)}</span>
+                <span
+                  onClick={() => setStagedFiles([])}
+                  style={{ color: '#DC2626', cursor: 'pointer', fontWeight: 500 }}
+                >
+                  Clear all
                 </span>
               </div>
-              <div className="upload-progress-bar">
-                <div className="upload-progress-fill" />
+              <div style={{ maxHeight: '130px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {stagedFiles.map((file, idx) => (
+                  <div
+                    key={idx}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '8px 12px',
+                      background: '#F8FAFC',
+                      border: '1px solid #E2E8F0',
+                      borderRadius: '8px'
+                    }}
+                  >
+                    <div style={{ fontSize: '12.5px', color: '#1E293B', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {file.name}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setStagedFiles((prev) => prev.filter((_, i) => i !== idx))}
+                      style={{ background: 'none', border: 'none', color: '#94A3B8', cursor: 'pointer', padding: '2px' }}
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                ))}
               </div>
             </div>
           )}
@@ -382,51 +359,67 @@ export default function UploadModal({
             <div style={{
               display: 'flex',
               alignItems: 'center',
-              gap: '10px',
-              padding: '12px 14px',
+              gap: '8px',
+              padding: '9px 12px',
               background: '#FEF2F2',
-              border: '1px solid #FEE2E2',
               borderRadius: '8px',
-              color: 'var(--danger, #B42318)',
-              fontSize: '13px',
-              lineHeight: 1.4,
+              color: '#DC2626',
+              fontSize: '12px',
               marginTop: '12px'
             }}>
-              <AlertCircle size={18} style={{ flexShrink: 0 }} />
+              <AlertCircle size={15} style={{ flexShrink: 0 }} />
               <span>{errorMsg}</span>
             </div>
           )}
         </div>
 
-        <div className="modal-footer-row">
+        {/* Footer */}
+        <div style={{
+          padding: '14px 24px',
+          borderTop: '1px solid #F1F5F9',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'flex-end',
+          gap: '8px',
+          background: '#FAFAFA'
+        }}>
           <button
             type="button"
-            className="btn-modal-cancel"
             onClick={handleClose}
             disabled={isUploading}
+            style={{
+              background: '#FFFFFF',
+              border: '1px solid #CBD5E1',
+              borderRadius: '7px',
+              padding: '7px 14px',
+              fontSize: '12.5px',
+              fontWeight: 600,
+              color: '#475467',
+              cursor: 'pointer'
+            }}
           >
             Cancel
           </button>
           <button
             type="button"
-            className="btn-modal-primary"
             onClick={handleUploadSubmit}
             disabled={isUploading || stagedFiles.length === 0}
+            style={{
+              background: stagedFiles.length > 0 ? '#2563EB' : '#94A3B8',
+              border: 'none',
+              borderRadius: '7px',
+              padding: '7px 16px',
+              fontSize: '12.5px',
+              fontWeight: 600,
+              color: '#FFFFFF',
+              cursor: stagedFiles.length > 0 ? 'pointer' : 'not-allowed',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
           >
-            {isUploading ? (
-              <>
-                <Loader2 size={16} className="spin" />
-                <span>Uploading ({stagedFiles.length})...</span>
-              </>
-            ) : (
-              <span>
-                {isReupload
-                  ? 'Replace Document'
-                  : stagedFiles.length > 1
-                    ? `Upload ${stagedFiles.length} Documents`
-                    : 'Upload Document'}
-              </span>
-            )}
+            {isUploading ? <Loader2 size={14} className="spin" /> : null}
+            <span>{isUploading ? 'Uploading...' : 'Upload Now'}</span>
           </button>
         </div>
       </div>
