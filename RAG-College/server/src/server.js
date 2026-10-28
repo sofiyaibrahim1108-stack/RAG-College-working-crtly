@@ -7,15 +7,59 @@ const Department = require('./models/Department');
 const Document = require('./models/Document');
 const DocumentChunk = require('./models/DocumentChunk');
 const Image = require('./models/Image');
+const MediaLibrary = require('./models/MediaLibrary'); // Media Library Schema
 const vectorService = require('./services/vector.service');
 const imageVectorService = require('./services/image-vector.service');
 const { processDocument } = require('./services/processor.service');
 const siglipService = require('./services/siglip.service');
+const { protect: requireAuth } = require('./middlewares/auth.middleware'); // Sariyaana middlewares folder path
 
 // Fast Router integration
 const { warmUpRouter, routeQuery } = require('./services/router.service');
 
-// Optional SSE Chat Stream endpoint with fast routing
+// ==========================================
+// MEDIA LIBRARY ROUTES & CONTROLLERS
+// ==========================================
+const path = require('path');
+const fs = require('fs');
+
+// 1. Get user's saved media library items
+app.get('/api/media-library', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user._id || req.user.id;
+    const items = await MediaLibrary.find({ userId }).sort({ savedAt: -1 });
+    return res.json({ success: true, data: items });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// 2. Download saved media image file securely
+app.get('/api/media-library/:id/download', requireAuth, async (req, res) => {
+  try {
+    const item = await MediaLibrary.findById(req.params.id);
+    if (!item || !fs.existsSync(item.imagePath)) {
+      return res.status(404).json({ success: false, message: 'Image file not found' });
+    }
+    return res.download(path.resolve(item.imagePath));
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// 3. Remove an item from the user's media library
+app.delete('/api/media-library/:id', requireAuth, async (req, res) => {
+  try {
+    await MediaLibrary.findByIdAndDelete(req.params.id);
+    return res.json({ success: true, message: 'Removed from library successfully' });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ==========================================
+// OPTIONAL SSE CHAT STREAM ENDPOINT
+// ==========================================
 app.post('/api/chat-stream', async (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
@@ -46,6 +90,9 @@ app.post('/api/chat-stream', async (req, res) => {
   }
 });
 
+// ==========================================
+// SERVER INITIALIZATION
+// ==========================================
 const startServer = async () => {
   // 1. Connect to local MongoDB
   await connectDB();
@@ -56,7 +103,6 @@ const startServer = async () => {
     const stats = await vectorService.getStats();
     console.log(`[VectorIndex] Text ANN Vector Store active: ${stats.vectorCount} vectors indexed (Dim: ${stats.dimension})`);
 
-    // Check actual chunk count in DocumentChunk collection instead of relying on totalChunks null/0
     const completedDocs = await Document.find({ status: 'completed' });
     const unindexedDocs = [];
 
@@ -65,7 +111,6 @@ const startServer = async () => {
       if (chunkCount === 0) {
         unindexedDocs.push(d);
       } else if (!d.totalChunks || d.totalChunks !== chunkCount) {
-        // Sync chunk count in Document record to prevent redundant re-indexing
         await Document.findByIdAndUpdate(d._id, { totalChunks: chunkCount });
       }
     }
@@ -86,7 +131,6 @@ const startServer = async () => {
     const imgStats = await imageVectorService.getStats();
     console.log(`[ImageVectorIndex] Image ANN Vector Store active: ${imgStats.vectorCount} vectors indexed (Dim: ${imgStats.dimension})`);
 
-    // Reconcile missing image vectors if Image documents exist in MongoDB but index is empty
     const embeddedImagesCount = await Image.countDocuments({ siglipEmbedding: { $exists: true, $ne: [] } });
     if (embeddedImagesCount > 0 && imgStats.vectorCount === 0) {
       console.log(`[ImageVectorIndex] Reconciling ${embeddedImagesCount} embedded images from MongoDB into local vector index...`);
@@ -126,7 +170,7 @@ const startServer = async () => {
     console.warn(`[Seed] Warning during initial department check: ${seedErr.message}`);
   }
 
-  // 6. Pre-warm router ONNX model (prevents first-request cold start latency)
+  // 6. Pre-warm router ONNX model
   try {
     console.log('[Router] Warming up classifier pipeline...');
     await warmUpRouter();
@@ -142,6 +186,7 @@ const startServer = async () => {
     console.log(` Departments API: http://localhost:${PORT}/api/departments`);
     console.log(` Documents API: http://localhost:${PORT}/api/documents`);
     console.log(` Images API: http://localhost:${PORT}/api/images`);
+    console.log(` Media Library API: http://localhost:${PORT}/api/media-library`);
     console.log(` Chat API: http://localhost:${PORT}/api/chat`);
     console.log(`=======================================================`);
   });

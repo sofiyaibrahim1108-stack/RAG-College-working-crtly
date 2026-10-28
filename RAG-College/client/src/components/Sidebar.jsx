@@ -20,7 +20,8 @@ import {
   ShieldAlert,
   Plus,
   ChevronUp,
-  ChevronDown
+  ChevronDown,
+  ImageIcon
 } from 'lucide-react';
 
 export default function Sidebar({
@@ -403,7 +404,7 @@ export default function Sidebar({
           )}
         </div>
 
-        {/* Top Search Input Box (Shown directly below header when search icon is clicked) */}
+        {/* Top Search Input Box */}
         {!isCollapsed && showTopSearch && (
           <div style={{ padding: '0 14px 10px' }}>
             <div style={{ position: 'relative' }}>
@@ -471,8 +472,8 @@ export default function Sidebar({
           </button>
         </div>
 
-        {/* 3. MANAGE Section (Admin Only) */}
-        {!isCollapsed && currentUser?.role === 'admin' && (
+        {/* 3. MANAGE Section (Role-based: Media Library for Users, Admin items only for Admins) */}
+        {!isCollapsed && (
           <div style={{ padding: '0 14px 16px', display: 'flex', flexDirection: 'column', gap: '3px' }}>
             <div style={{
               fontSize: '11px',
@@ -485,9 +486,9 @@ export default function Sidebar({
               Manage
             </div>
 
-            {/* Knowledge Base */}
+            {/* Media Library (Visible for all users) */}
             <div
-              onClick={() => handleNavClick('documents')}
+              onClick={() => handleNavClick('media-library')}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -495,91 +496,115 @@ export default function Sidebar({
                 padding: '9.5px 12px',
                 borderRadius: '8px',
                 cursor: 'pointer',
-                background: activeView === 'documents' ? 'rgba(30, 58, 138, 0.45)' : 'transparent',
-                color: activeView === 'documents' ? '#38BDF8' : '#CBD5E1',
-                borderLeft: activeView === 'documents' ? '3px solid #38BDF8' : '3px solid transparent',
+                background: activeView === 'media-library' ? 'rgba(30, 58, 138, 0.45)' : 'transparent',
+                color: activeView === 'media-library' ? '#38BDF8' : '#CBD5E1',
+                borderLeft: activeView === 'media-library' ? '3px solid #38BDF8' : '3px solid transparent',
                 transition: 'all 0.15s ease'
               }}
               className="exact-nav-link"
             >
-              <BookOpen size={16} strokeWidth={activeView === 'documents' ? 2.2 : 1.8} />
-              <span style={{ fontSize: '13.5px', fontWeight: activeView === 'documents' ? 650 : 500 }}>
-                Knowledge Base
+              <ImageIcon size={16} strokeWidth={activeView === 'media-library' ? 2.2 : 1.8} />
+              <span style={{ fontSize: '13.5px', fontWeight: activeView === 'media-library' ? 650 : 500 }}>
+                Media Library
               </span>
             </div>
 
-            {/* Departments */}
-            <div
-              onClick={() => handleNavClick('departments')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
-                padding: '9.5px 12px',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                background: activeView === 'departments' ? 'rgba(30, 58, 138, 0.45)' : 'transparent',
-                color: activeView === 'departments' ? '#38BDF8' : '#CBD5E1',
-                borderLeft: activeView === 'departments' ? '3px solid #38BDF8' : '3px solid transparent',
-                transition: 'all 0.15s ease'
-              }}
-              className="exact-nav-link"
-            >
-              <Building2 size={16} strokeWidth={activeView === 'departments' ? 2.2 : 1.8} />
-              <span style={{ fontSize: '13.5px', fontWeight: activeView === 'departments' ? 650 : 500 }}>
-                Departments
-              </span>
-            </div>
+            {/* Knowledge Base & Departments (ADMIN ONLY) */}
+            {currentUser?.role === 'admin' && (
+              <>
+                <div
+                  onClick={() => handleNavClick('documents')}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    padding: '9.5px 12px',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    background: activeView === 'documents' ? 'rgba(30, 58, 138, 0.45)' : 'transparent',
+                    color: activeView === 'documents' ? '#38BDF8' : '#CBD5E1',
+                    borderLeft: activeView === 'documents' ? '3px solid #38BDF8' : '3px solid transparent',
+                    transition: 'all 0.15s ease'
+                  }}
+                  className="exact-nav-link"
+                >
+                  <BookOpen size={16} strokeWidth={activeView === 'documents' ? 2.2 : 1.8} />
+                  <span style={{ fontSize: '13.5px', fontWeight: activeView === 'documents' ? 650 : 500 }}>
+                    Knowledge Base
+                  </span>
+                </div>
 
-            {/* Users & Staff */}
-            <div
-              onClick={() => handleNavClick('users')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
-                padding: '9.5px 12px',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                background: activeView === 'users' ? 'rgba(30, 58, 138, 0.45)' : 'transparent',
-                color: activeView === 'users' ? '#38BDF8' : '#CBD5E1',
-                borderLeft: activeView === 'users' ? '3px solid #38BDF8' : '3px solid transparent',
-                transition: 'all 0.15s ease'
-              }}
-              className="exact-nav-link"
-            >
-              <Users size={16} strokeWidth={activeView === 'users' ? 2.2 : 1.8} />
-              <span style={{ fontSize: '13.5px', fontWeight: activeView === 'users' ? 650 : 500 }}>
-                Users & Staff
-              </span>
-            </div>
+                <div
+                  onClick={() => handleNavClick('departments')}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    padding: '9.5px 12px',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    background: activeView === 'departments' ? 'rgba(30, 58, 138, 0.45)' : 'transparent',
+                    color: activeView === 'departments' ? '#38BDF8' : '#CBD5E1',
+                    borderLeft: activeView === 'departments' ? '3px solid #38BDF8' : '3px solid transparent',
+                    transition: 'all 0.15s ease'
+                  }}
+                  className="exact-nav-link"
+                >
+                  <Building2 size={16} strokeWidth={activeView === 'departments' ? 2.2 : 1.8} />
+                  <span style={{ fontSize: '13.5px', fontWeight: activeView === 'departments' ? 650 : 500 }}>
+                    Departments
+                  </span>
+                </div>
 
-            {/* Audit Logs */}
-            <div
-              onClick={() => handleNavClick('audit-logs')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
-                padding: '9.5px 12px',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                background: activeView === 'audit-logs' ? 'rgba(30, 58, 138, 0.45)' : 'transparent',
-                color: activeView === 'audit-logs' ? '#38BDF8' : '#CBD5E1',
-                borderLeft: activeView === 'audit-logs' ? '3px solid #38BDF8' : '3px solid transparent',
-                transition: 'all 0.15s ease'
-              }}
-              className="exact-nav-link"
-            >
-              <ShieldAlert size={16} strokeWidth={activeView === 'audit-logs' ? 2.2 : 1.8} />
-              <span style={{ fontSize: '13.5px', fontWeight: activeView === 'audit-logs' ? 650 : 500 }}>
-                Audit Logs
-              </span>
-            </div>
+                <div
+                  onClick={() => handleNavClick('users')}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    padding: '9.5px 12px',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    background: activeView === 'users' ? 'rgba(30, 58, 138, 0.45)' : 'transparent',
+                    color: activeView === 'users' ? '#38BDF8' : '#CBD5E1',
+                    borderLeft: activeView === 'users' ? '3px solid #38BDF8' : '3px solid transparent',
+                    transition: 'all 0.15s ease'
+                  }}
+                  className="exact-nav-link"
+                >
+                  <Users size={16} strokeWidth={activeView === 'users' ? 2.2 : 1.8} />
+                  <span style={{ fontSize: '13.5px', fontWeight: activeView === 'users' ? 650 : 500 }}>
+                    Users & Staff
+                  </span>
+                </div>
+
+                <div
+                  onClick={() => handleNavClick('audit-logs')}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    padding: '9.5px 12px',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    background: activeView === 'audit-logs' ? 'rgba(30, 58, 138, 0.45)' : 'transparent',
+                    color: activeView === 'audit-logs' ? '#38BDF8' : '#CBD5E1',
+                    borderLeft: activeView === 'audit-logs' ? '3px solid #38BDF8' : '3px solid transparent',
+                    transition: 'all 0.15s ease'
+                  }}
+                  className="exact-nav-link"
+                >
+                  <ShieldAlert size={16} strokeWidth={activeView === 'audit-logs' ? 2.2 : 1.8} />
+                  <span style={{ fontSize: '13.5px', fontWeight: activeView === 'audit-logs' ? 650 : 500 }}>
+                    Audit Logs
+                  </span>
+                </div>
+              </>
+            )}
           </div>
         )}
 
-        {/* 4. RECENT CHATS Section (Pure list, without awkward view-all button) */}
+        {/* 4. RECENT CHATS Section */}
         {!isCollapsed && (
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, padding: '0 10px' }}>
             <div style={{
@@ -593,7 +618,6 @@ export default function Sidebar({
               Recent Chats
             </div>
 
-            {/* Scrollable Chat List */}
             <div
               className="sidebar-custom-scroll-area"
               style={{
@@ -631,7 +655,6 @@ export default function Sidebar({
             background: '#070E1E'
           }}
         >
-          {/* Popover Flyout Menu */}
           {isProfileMenuOpen && currentUser && !isCollapsed && (
             <div
               style={{
@@ -754,8 +777,8 @@ export default function Sidebar({
                     <div style={{ fontSize: '13.5px', fontWeight: 600, color: '#FFFFFF', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {currentUser.name || 'System Admin'}
                     </div>
-                    <div style={{ fontSize: '11px', color: '#64748B' }}>
-                      {currentUser.role === 'admin' ? 'Administrator' : 'Student'}
+                    <div style={{ fontSize: '11px', color: '#64748B', textTransform: 'capitalize' }}>
+                      {currentUser.role ? (currentUser.role === 'admin' ? 'Administrator' : currentUser.role) : 'User'}
                     </div>
                   </div>
                 </div>

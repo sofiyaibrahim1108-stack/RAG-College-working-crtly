@@ -13,14 +13,13 @@ import {
   ExternalLink,
   Pencil,
   X,
-  AlertCircle
+  AlertCircle,
+  Bookmark
 } from 'lucide-react';
 import { GoogleDriveIcon } from './Icons';
 
-// Automatically normalize API_BASE to strip trailing /api to prevent double /api/api paths
 const API_BASE = (import.meta.env.VITE_API_BASE || 'http://localhost:5000').replace(/\/api\/?$/, '');
 
-// Helper to append auth token query string for secured image tags
 function getAuthenticatedImageUrl(imgId) {
   const token =
     localStorage.getItem('token') ||
@@ -30,15 +29,10 @@ function getAuthenticatedImageUrl(imgId) {
   return `${API_BASE}/api/images/${imgId}/file${cleanToken ? `?token=${encodeURIComponent(cleanToken)}` : ''}`;
 }
 
-/**
- * Process text nodes to render citation badges [1], [2], highlight ==...==,
- * and inline markdown images ![alt](url) that ReactMarkdown doesn't handle.
- */
 function processTextNode(text, onCitationClick) {
   if (!text || typeof text !== 'string') return text;
 
   const tokens = text.split(/(==.*?==|\[\d+(?:,\s*\d+)*\]|!\[.*?\]\(.*?\))/g);
-
   const hasSpecialTokens = tokens.some(
     (tok) =>
       (tok.startsWith('==') && tok.endsWith('==') && tok.length >= 4) ||
@@ -341,11 +335,49 @@ export default function MessageItem({
     }
   };
 
+  const handleSaveToLibrary = async (imgSrc, e) => {
+    e.stopPropagation();
+    try {
+      const token =
+        localStorage.getItem('token') ||
+        localStorage.getItem('auth_token') ||
+        localStorage.getItem('jwt');
+
+      const headers = {
+        'Content-Type': 'application/json'
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token.replace(/^"|"$/g, '')}`;
+      }
+
+      const res = await fetch(`${API_BASE}/api/media-library`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          documentId: imgSrc.documentId?._id || imgSrc.documentId,
+          imageUrl: getAuthenticatedImageUrl(imgSrc.imageId || imgSrc._id),
+          imagePath: imgSrc.imagePath || imgSrc.path || '',
+          caption: imgSrc.caption || imgSrc.filename || 'Diagram',
+          pageNumber: imgSrc.pageNumber || imgSrc.page || 1
+        })
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        if (onToast) onToast('Saved to Media Library successfully!', 'success');
+      } else {
+        if (onToast) onToast(data.message || 'Failed to save image', 'error');
+      }
+    } catch (err) {
+      console.error('Error saving image:', err);
+      if (onToast) onToast('Failed to save image to library', 'error');
+    }
+  };
+
   const handleOpenSource = (src) => {
     setActiveCitationPreview(src);
   };
 
-  // Authenticated file open handler to prevent 401 Unauthorized errors on protected file downloads
   const handleAuthenticatedOpen = async (fileUrl) => {
     try {
       const token =
@@ -500,7 +532,7 @@ export default function MessageItem({
           </div>
         )}
 
-        {/* Attached Visual Diagrams / Screenshots */}
+        {/* Attached Visual Diagrams / Screenshots with ChatGPT style Bookmark button */}
         {!isUser && !isError && imageSources.length > 0 && (
           <div className="message-attached-images">
             <div className="attached-images-heading">
@@ -521,7 +553,7 @@ export default function MessageItem({
                     onClick={() => handleOpenSource(imgSrc)}
                     title={`Click to open full-resolution image: ${imgSrc.caption || imgSrc.filename}`}
                   >
-                    <div className="attached-image-frame">
+                    <div className="attached-image-frame" style={{ position: 'relative' }}>
                       <img
                         src={fileUrl}
                         alt={imgSrc.caption || imgSrc.filename || 'Diagram'}
@@ -534,6 +566,34 @@ export default function MessageItem({
                       <div className="attached-image-badge-chip">
                         <span>[{citNum}]</span>
                       </div>
+                      
+                      {/* ChatGPT style Floating Bookmark Save Button */}
+                      <button
+                        type="button"
+                        onClick={(e) => handleSaveToLibrary(imgSrc, e)}
+                        title="Save to Media Library"
+                        style={{
+                          position: 'absolute',
+                          top: '8px',
+                          right: '8px',
+                          background: 'rgba(15, 23, 42, 0.8)',
+                          backdropFilter: 'blur(4px)',
+                          color: '#38BDF8',
+                          border: '1px solid rgba(255, 255, 255, 0.15)',
+                          borderRadius: '6px',
+                          width: '32px',
+                          height: '32px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease',
+                          zIndex: 10
+                        }}
+                      >
+                        <Bookmark size={15} />
+                      </button>
+
                       <div className="attached-image-hover-action">
                         <ExternalLink size={13} color="#FFFFFF" />
                         <span>View Diagram</span>
@@ -628,7 +688,7 @@ export default function MessageItem({
           </div>
         )}
 
-        {/* Assistant Actions Bar: Copy, Regenerate, ThumbsUp, ThumbsDown */}
+        {/* Assistant Actions Bar */}
         {!isUser && !isError && (
           <div className="assistant-actions-bar">
             <button

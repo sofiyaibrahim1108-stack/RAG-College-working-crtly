@@ -14,6 +14,7 @@ const driveRoutes = require('./routes/drive.routes');
 const authRoutes = require('./routes/auth.routes');
 const userRoutes = require('./routes/user.routes');
 const auditRoutes = require('./routes/audit.routes');
+const mediaRoutes = require('./routes/media.routes'); 
 
 const app = express();
 
@@ -37,7 +38,7 @@ app.use(
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Gracefully catch malformed JSON payloads (prevents SyntaxError 400 crashes in terminal/logs)
+// Gracefully catch malformed JSON payloads
 app.use((err, req, res, next) => {
   if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
     return res.status(400).json({
@@ -70,6 +71,7 @@ app.use('/api/drive', driveRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/audit-logs', auditRoutes);
+app.use('/api/media-library', mediaRoutes); // 👈 Mounted here
 
 // Root route
 app.get('/', (req, res) => {

@@ -38,6 +38,7 @@ import DocumentsView from './components/DocumentsView';
 import DepartmentsView from './components/DepartmentsView';
 import UsersView from './components/UsersView';
 import AuditLogsView from './components/AuditLogsView';
+import MediaLibraryView from './components/MediaLibraryView';
 import UploadModal from './components/UploadModal';
 import DepartmentModal from './components/DepartmentModal';
 import ConfirmModal from './components/ConfirmModal';
@@ -165,7 +166,7 @@ export default function App() {
     try {
       const params = new URLSearchParams(window.location.search);
       const viewParam = params.get('view');
-      if (['documents', 'departments', 'chat', 'users', 'audit-logs'].includes(viewParam)) {
+      if (['documents', 'departments', 'chat', 'users', 'audit-logs', 'media-library'].includes(viewParam)) {
         return viewParam;
       }
     } catch {
@@ -400,7 +401,7 @@ export default function App() {
 
   // RBAC Guard
   useEffect(() => {
-    if (currentUser && currentUser.role !== 'admin' && activeView !== 'chat') {
+    if (currentUser && currentUser.role !== 'admin' && activeView !== 'chat' && activeView !== 'media-library') {
       setActiveView('chat');
     }
   }, [currentUser, activeView]);
@@ -455,7 +456,6 @@ export default function App() {
     addToast('Signed out successfully', 'info');
   };
 
-  // Profile Update Handler
   const handleUpdateProfile = async (payload) => {
     const res = await updateProfile(payload);
     if (res.user) {
@@ -470,7 +470,6 @@ export default function App() {
     setShowSettingsModal(true);
   };
 
-  // User Management Handlers (Admin Only)
   const loadUsersData = async () => {
     if (currentUser?.role !== 'admin') return;
     try {
@@ -1715,7 +1714,9 @@ export default function App() {
                   ? 'User Management'
                   : activeView === 'audit-logs'
                     ? 'Security & Audit Logs'
-                    : null
+                    : activeView === 'media-library'
+                      ? 'Media Library'
+                      : null
           }
         />
 
@@ -1940,6 +1941,11 @@ export default function App() {
               </div>
             )}
           </div>
+        )}
+
+        {/* Media Library View */}
+        {activeView === 'media-library' && (
+          <MediaLibraryView onToast={addToast} />
         )}
 
         {activeView === 'documents' && currentUser?.role === 'admin' && (
