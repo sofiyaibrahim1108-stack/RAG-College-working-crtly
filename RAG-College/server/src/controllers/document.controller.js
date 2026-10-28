@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Document = require('../models/Document');
 const DocumentChunk = require('../models/DocumentChunk');
 const Image = require('../models/Image');
@@ -10,26 +11,153 @@ const vectorService = require('../services/vector.service');
 const imageVectorService = require('../services/image-vector.service');
 const { logAction } = require('../services/audit.service');
 
+/* ------------------------------------------------------------------ */
+/* Access-control helpers (all driven by the user's and document's     */
+/* stored department ids - nothing is hardcoded)                       */
+/* ------------------------------------------------------------------ */
+
+// Normalises ObjectId, populated object or string into a plain string id.
+function toIdString(value) {
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value === 'object' && value._id) return String(value._id);
+  return String(value);
+}
+
+function uniqueIds(list) {
+  return [...new Set((list || []).map(toIdString).filter(Boolean))];
+}
+
+function getUserDepartmentIds(user) {
+  if (!user) return [];
+  const source = Array.isArray(user.departmentIds) && user.departmentIds.length > 0
+    ? user.departmentIds
+    : (user.departmentId ? [user.departmentId] : []);
+  return uniqueIds(source);
+}
+
+function getDocumentDepartmentIds(doc) {
+  const source = Array.isArray(doc.departmentIds) && doc.departmentIds.length > 0
+    ? doc.departmentIds
+    : (doc.departmentId ? [doc.departmentId] : []);
+  return uniqueIds(source);
+}
+
+function isAdmin(user) {
+  return !!user && user.role === 'admin';
+}
+
+// Admin with no departments assigned = Super Admin (full access).
+function isSuperAdmin(user) {
+  return isAdmin(user) && getUserDepartmentIds(user).length === 0;
+}
+
+// Admin with one or more departments assigned = Department Admin (scoped).
+function isScopedAdmin(user) {
+  return isAdmin(user) && getUserDepartmentIds(user).length > 0;
+}
+
+function canReadDocument(user, doc) {
+  if (!user) return true; // keeps the previous behaviour when no user is attached
+  if (isSuperAdmin(user)) return true;
+  if (doc.isPublic) return true;
+  const userDepts = getUserDepartmentIds(user);
+  return getDocumentDepartmentIds(doc).some((id) => userDepts.includes(id));
+}
+
+// Upload / delete rights. A scoped admin may only manage documents whose
+// departments are ALL within their own assigned departments.
+function canManageDocument(user, doc) {
+  if (!isAdmin(user)) return false;
+  if (isSuperAdmin(user)) return true;
+  const docDepts = getDocumentDepartmentIds(doc);
+  const userDepts = getUserDepartmentIds(user);
+  return docDepts.length > 0 && docDepts.every((id) => userDepts.includes(id));
+}
+
+function parseDepartmentIds(body) {
+  const raw = body.departmentIds !== undefined ? body.departmentIds : body.departmentId;
+  if (raw === undefined || raw === null || raw === '') return [];
+
+  let ids;
+  if (Array.isArray(raw)) {
+    ids = raw;
+  } else if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      ids = Array.isArray(parsed) ? parsed : [parsed];
+    } catch (e) {
+      ids = [raw];
+    }
+  } else {
+    ids = [raw];
+  }
+  return uniqueIds(ids);
+}
+
+function escapeRegex(text) {
+  return String(text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function cleanupUploadedFiles(files) {
+  for (const file of files || []) {
+    try {
+      if (file && file.path && fs.existsSync(file.path)) fs.unlinkSync(file.path);
+    } catch (e) {
+      // ignore cleanup failure
+    }
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Controllers                                                         */
+/* ------------------------------------------------------------------ */
+
 async function getDocuments(req, res) {
   try {
     const { departmentId, status, search } = req.query;
-    const query = {};
+    const user = req.user;
+    const conditions = [];
 
-    if (req.user && req.user.role !== 'admin') {
-      const userDepts = req.user.departmentIds || (req.user.departmentId ? [req.user.departmentId] : []);
-      query.$or = [
-        { isPublic: true },
-        { departmentIds: { $in: userDepts } },
-        { departmentId: { $in: userDepts } }
-      ];
+    if (user) {
+      const userDepts = getUserDepartmentIds(user);
+
+      if (isAdmin(user)) {
+        // Department Admin: only documents in their own departments.
+        // Super Admin: no restriction.
+        if (userDepts.length > 0) {
+          conditions.push({
+            $or: [
+              { departmentIds: { $in: userDepts } },
+              { departmentId: { $in: userDepts } }
+            ]
+          });
+        }
+      } else {
+        conditions.push({
+          $or: [
+            { isPublic: true },
+            { departmentIds: { $in: userDepts } },
+            { departmentId: { $in: userDepts } }
+          ]
+        });
+      }
     }
 
-    if (departmentId) query.departmentIds = departmentId;
-    if (status) query.status = status;
+    if (departmentId) {
+      if (!mongoose.isValidObjectId(departmentId)) {
+        return res.json({ success: true, data: [] });
+      }
+      conditions.push({
+        $or: [{ departmentIds: departmentId }, { departmentId }]
+      });
+    }
+
+    if (status) conditions.push({ status });
     if (search) {
-      query.originalFilename = { $regex: search, $options: 'i' };
+      conditions.push({ originalFilename: { $regex: escapeRegex(search), $options: 'i' } });
     }
 
+    const query = conditions.length > 0 ? { $and: conditions } : {};
     const documents = await Document.find(query).sort({ createdAt: -1 });
     return res.json({ success: true, data: documents });
   } catch (err) {
@@ -39,25 +167,50 @@ async function getDocuments(req, res) {
 
 async function uploadDocuments(req, res) {
   try {
+    const user = req.user;
+
+    if (!isAdmin(user)) {
+      cleanupUploadedFiles(req.files);
+      return res.status(403).json({ success: false, message: 'Admin privileges required to upload documents' });
+    }
+
     if (!req.files || req.files.length === 0) {
       return res.status(400).json({ success: false, message: 'No files uploaded' });
     }
 
-    // Properly parse departmentIds and isPublic sent from UploadModal frontend
-    let departmentIds = [];
-    if (req.body.departmentIds) {
-      try {
-        departmentIds = typeof req.body.departmentIds === 'string' 
-          ? JSON.parse(req.body.departmentIds) 
-          : req.body.departmentIds;
-      } catch (e) {
-        departmentIds = [req.body.departmentIds];
-      }
-    } else if (req.body.departmentId) {
-      departmentIds = [req.body.departmentId];
+    const departmentIds = parseDepartmentIds(req.body).filter(Boolean);
+
+    if (departmentIds.some((id) => !mongoose.isValidObjectId(id))) {
+      cleanupUploadedFiles(req.files);
+      return res.status(400).json({ success: false, message: 'One or more department ids are invalid' });
     }
 
-    const isPublic = req.body.isPublic === 'true' || req.body.isPublic === true;
+    let isPublic = req.body.isPublic === 'true' || req.body.isPublic === true;
+
+    if (isScopedAdmin(user)) {
+      const userDepts = getUserDepartmentIds(user);
+
+      if (departmentIds.length === 0) {
+        cleanupUploadedFiles(req.files);
+        return res.status(400).json({
+          success: false,
+          message: 'Select at least one of your assigned departments for this upload'
+        });
+      }
+
+      const outOfScope = departmentIds.filter((id) => !userDepts.includes(id));
+      if (outOfScope.length > 0) {
+        cleanupUploadedFiles(req.files);
+        return res.status(403).json({
+          success: false,
+          message: 'You can only upload to departments assigned to you'
+        });
+      }
+
+      // Public (all-users) documents are managed by Super Admins only.
+      isPublic = false;
+    }
+
     const uploadedDocs = [];
 
     for (const file of req.files) {
@@ -74,7 +227,7 @@ async function uploadDocuments(req, res) {
         mimeType: file.mimetype,
         fileType: ext || 'pdf',
         fileHash,
-        departmentIds: departmentIds.filter(Boolean),
+        departmentIds,
         departmentId: departmentIds[0] || null,
         isPublic,
         status: 'pending'
@@ -82,23 +235,19 @@ async function uploadDocuments(req, res) {
 
       uploadedDocs.push(doc);
 
-      // Increment department document counts
       for (const dId of departmentIds) {
-        if (dId) {
-          await Department.findByIdAndUpdate(dId, { $inc: { documentCount: 1 } }).catch(() => {});
-        }
+        await Department.findByIdAndUpdate(dId, { $inc: { documentCount: 1 } }).catch(() => {});
       }
 
-      // Record audit log
       logAction({
         req,
         action: 'DOCUMENT_UPLOAD',
         resourceType: 'Document',
         resourceId: doc._id,
-        details: { filename: doc.originalFilename, isPublic }
+        details: { filename: doc.originalFilename, isPublic, departmentIds }
       });
-      
-      processDocument(doc._id).catch(err => console.error('[Processor] Background error:', err));
+
+      processDocument(doc._id).catch((err) => console.error('[Processor] Background error:', err));
     }
 
     return res.status(201).json({ success: true, data: uploadedDocs });
@@ -112,15 +261,8 @@ async function getDocumentById(req, res) {
     const doc = await Document.findById(req.params.id);
     if (!doc) return res.status(404).json({ success: false, message: 'Document not found' });
 
-    if (req.user && req.user.role !== 'admin') {
-      const userDepts = req.user.departmentIds || (req.user.departmentId ? [req.user.departmentId] : []);
-      const hasAccess = doc.isPublic || 
-        (doc.departmentIds && doc.departmentIds.some(id => userDepts.includes(id.toString()))) ||
-        (doc.departmentId && userDepts.includes(doc.departmentId.toString()));
-      
-      if (!hasAccess) {
-        return res.status(403).json({ success: false, message: 'Access denied to this document' });
-      }
+    if (!canReadDocument(req.user, doc)) {
+      return res.status(403).json({ success: false, message: 'Access denied to this document' });
     }
 
     return res.json({ success: true, data: doc });
@@ -136,17 +278,10 @@ async function getDocumentFile(req, res) {
       return res.status(404).json({ success: false, message: 'Document record not found' });
     }
 
-    if (req.user && req.user.role !== 'admin') {
-      const userDepts = req.user.departmentIds || (req.user.departmentId ? [req.user.departmentId] : []);
-      const hasAccess = doc.isPublic || 
-        (doc.departmentIds && doc.departmentIds.some(id => userDepts.includes(id.toString()))) ||
-        (doc.departmentId && userDepts.includes(doc.departmentId.toString()));
-      
-      if (!hasAccess) {
-        return res.status(403).json({ success: false, message: 'Access denied to this file' });
-      }
+    if (!canReadDocument(req.user, doc)) {
+      return res.status(403).json({ success: false, message: 'Access denied to this file' });
     }
-    
+
     const targetPath = doc.storagePath || doc.filePath;
     if (!targetPath || !fs.existsSync(targetPath)) {
       return res.status(404).json({ success: false, message: 'File not found on disk' });
@@ -162,15 +297,8 @@ async function getDocumentImages(req, res) {
     const doc = await Document.findById(req.params.id);
     if (!doc) return res.status(404).json({ success: false, message: 'Document not found' });
 
-    if (req.user && req.user.role !== 'admin') {
-      const userDepts = req.user.departmentIds || (req.user.departmentId ? [req.user.departmentId] : []);
-      const hasAccess = doc.isPublic || 
-        (doc.departmentIds && doc.departmentIds.some(id => userDepts.includes(id.toString()))) ||
-        (doc.departmentId && userDepts.includes(doc.departmentId.toString()));
-      
-      if (!hasAccess) {
-        return res.status(403).json({ success: false, message: 'Access denied' });
-      }
+    if (!canReadDocument(req.user, doc)) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
     }
 
     const images = await Image.find({ documentId: req.params.id }).sort({ pageNumber: 1, createdAt: 1 });
@@ -184,6 +312,13 @@ async function deleteDocument(req, res) {
   try {
     const doc = await Document.findById(req.params.id);
     if (!doc) return res.status(404).json({ success: false, message: 'Document not found' });
+
+    if (!canManageDocument(req.user, doc)) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to delete this document'
+      });
+    }
 
     // 1. Remove physical file from disk
     const targetPath = doc.storagePath || doc.filePath;
@@ -218,18 +353,14 @@ async function deleteDocument(req, res) {
     }
 
     // 5. Decrement department document counts
-    const deptList = doc.departmentIds && doc.departmentIds.length > 0 ? doc.departmentIds : (doc.departmentId ? [doc.departmentId] : []);
-    for (const dId of deptList) {
-      if (dId) {
-        await Department.findByIdAndUpdate(dId, { $inc: { documentCount: -1 } }).catch(() => {});
-      }
+    for (const dId of getDocumentDepartmentIds(doc)) {
+      await Department.findByIdAndUpdate(dId, { $inc: { documentCount: -1 } }).catch(() => {});
     }
 
     await DocumentChunk.deleteMany({ documentId: doc._id });
     await Image.deleteMany({ documentId: doc._id });
     await Document.findByIdAndDelete(doc._id);
 
-    // Record audit log for deletion
     logAction({
       req,
       action: 'DOCUMENT_DELETE',

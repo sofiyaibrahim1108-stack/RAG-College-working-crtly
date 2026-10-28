@@ -296,19 +296,19 @@ exports.listConversations = async (req, res) => {
     const filter = {};
     const currentUserId = req.user ? (req.user._id || req.user.id) : null;
 
-    if (req.user && req.user.role !== 'admin') {
-      if (currentUserId) {
-        const userObjId = mongoose.Types.ObjectId.isValid(currentUserId)
-          ? new mongoose.Types.ObjectId(currentUserId)
-          : null;
+    // Filter conversations strictly by userId for ALL users (including admins if you want isolated chats)
+    // Or if admins should see their own chats, remove the admin check:
+    if (currentUserId) {
+      const userObjId = mongoose.Types.ObjectId.isValid(currentUserId)
+        ? new mongoose.Types.ObjectId(currentUserId)
+        : null;
 
-        filter.$or = [
-          { userId: String(currentUserId) },
-          ...(userObjId ? [{ userId: userObjId }] : [])
-        ];
-      } else {
-        return res.status(200).json({ success: true, count: 0, data: [] });
-      }
+      filter.$or = [
+        { userId: String(currentUserId) },
+        ...(userObjId ? [{ userId: userObjId }] : [])
+      ];
+    } else {
+      return res.status(200).json({ success: true, count: 0, data: [] });
     }
 
     const conversations = await Conversation.find(filter).sort({ updatedAt: -1 }).limit(30);
