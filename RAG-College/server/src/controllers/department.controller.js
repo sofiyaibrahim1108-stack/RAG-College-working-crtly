@@ -1,5 +1,12 @@
+const mongoose = require('mongoose');
 const Department = require('../models/Department');
 const Document = require('../models/Document');
+const {
+  resolveActor,
+  getUserDepartmentIds,
+  isScopedAdmin,
+  isSuperAdmin
+} = require('../services/access.service');
 
 const defaultDepartments = [
   {
@@ -28,11 +35,33 @@ const defaultDepartments = [
   }
 ];
 
-// GET /api/departments - List all departments with document counts
+// Creating, editing, seeding and deleting departments is a Super Admin job.
+// Returns true when the request was blocked (response already sent).
+async function blockUnlessSuperAdmin(req, res) {
+  const actor = await resolveActor(req);
+  if (!isSuperAdmin(actor)) {
+    res.status(403).json({
+      success: false,
+      message: 'Only a Super Admin can manage departments.'
+    });
+    return true;
+  }
+  return false;
+}
+
+// GET /api/departments - Super Admin / staff: all departments. Department Admin: only their own.
 exports.getDepartments = async (req, res) => {
   try {
-    const departments = await Department.find().sort({ name: 1 });
-    
+    const actor = await resolveActor(req);
+    const filter = {};
+
+    if (isScopedAdmin(actor)) {
+      const ownIds = getUserDepartmentIds(actor).filter((id) => mongoose.isValidObjectId(id));
+      filter._id = { $in: ownIds };
+    }
+
+    const departments = await Department.find(filter).sort({ name: 1 });
+
     // Update live document counts efficiently
     const departmentsWithCounts = await Promise.all(
       departments.map(async (dept) => {
@@ -63,6 +92,8 @@ exports.getDepartments = async (req, res) => {
 // POST /api/departments - Create a department
 exports.createDepartment = async (req, res) => {
   try {
+    if (await blockUnlessSuperAdmin(req, res)) return;
+
     const { name, code, description, aliases } = req.body;
 
     if (!name || !code) {
@@ -111,6 +142,8 @@ exports.createDepartment = async (req, res) => {
 // POST /api/departments/seed - Seed default college departments
 exports.seedDepartments = async (req, res) => {
   try {
+    if (await blockUnlessSuperAdmin(req, res)) return;
+
     const seeded = [];
     for (const item of defaultDepartments) {
       const exists = await Department.findOne({ code: item.code });
@@ -134,6 +167,8 @@ exports.seedDepartments = async (req, res) => {
 // PUT /api/departments/:id - Update an existing department
 exports.updateDepartment = async (req, res) => {
   try {
+    if (await blockUnlessSuperAdmin(req, res)) return;
+
     const { id } = req.params;
     const { name, code, description, aliases } = req.body;
 
@@ -190,6 +225,8 @@ exports.updateDepartment = async (req, res) => {
 // DELETE /api/departments/:id
 exports.deleteDepartment = async (req, res) => {
   try {
+    if (await blockUnlessSuperAdmin(req, res)) return;
+
     const { id } = req.params;
     const dept = await Department.findById(id);
     if (!dept) {
@@ -212,4 +249,3 @@ exports.deleteDepartment = async (req, res) => {
     return res.status(500).json({ success: false, message: error.message });
   }
 };
-

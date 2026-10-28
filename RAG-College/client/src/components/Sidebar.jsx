@@ -23,6 +23,7 @@ import {
   ChevronDown,
   ImageIcon
 } from 'lucide-react';
+import { isAdmin, isSuperAdmin } from '../utils/access';
 
 export default function Sidebar({
   activeView,
@@ -56,6 +57,20 @@ export default function Sidebar({
   const searchInputRef = useRef(null);
   const menuRef = useRef(null);
   const profileMenuRef = useRef(null);
+
+  // Role-based navigation:
+  //  - every admin sees Knowledge Base and Users & Staff (their own scope is enforced by the backend)
+  //  - only a Super Admin sees Departments and Audit Logs
+  const isAdminUser = isAdmin(currentUser);
+  const superAdmin = isSuperAdmin(currentUser);
+
+  const roleLabel = !currentUser
+    ? 'User'
+    : isAdminUser
+      ? superAdmin
+        ? 'Super Admin'
+        : 'Department Admin'
+      : currentUser.role || 'User';
 
   useEffect(() => {
     function handleClickOutside(e) {
@@ -106,6 +121,34 @@ export default function Sidebar({
   const handleNavClick = (view) => {
     setActiveView(view);
     if (onCloseMobile) onCloseMobile();
+  };
+
+  const renderNavItem = (view, Icon, label) => {
+    const isActiveNav = activeView === view;
+    return (
+      <div
+        key={view}
+        onClick={() => handleNavClick(view)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          padding: '9.5px 12px',
+          borderRadius: '8px',
+          cursor: 'pointer',
+          background: isActiveNav ? 'rgba(37, 99, 235, 0.45)' : 'transparent',
+          color: isActiveNav ? '#38BDF8' : '#FFFFFF',
+          borderLeft: isActiveNav ? '3px solid #38BDF8' : '3px solid transparent',
+          transition: 'all 0.15s ease'
+        }}
+        className="exact-nav-link"
+      >
+        <Icon size={16} strokeWidth={isActiveNav ? 2.2 : 1.9} color={isActiveNav ? '#38BDF8' : '#FFFFFF'} />
+        <span style={{ fontSize: '13.5px', fontWeight: isActiveNav ? 650 : 500, color: '#FFFFFF' }}>
+          {label}
+        </span>
+      </div>
+    );
   };
 
   const renderChatItem = (conv, isPinnedItem = false) => {
@@ -486,121 +529,19 @@ export default function Sidebar({
               Manage
             </div>
 
-            {/* Media Library (Visible for all users) */}
-            <div
-              onClick={() => handleNavClick('media-library')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
-                padding: '9.5px 12px',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                background: activeView === 'media-library' ? 'rgba(37, 99, 235, 0.45)' : 'transparent',
-                color: activeView === 'media-library' ? '#38BDF8' : '#FFFFFF',
-                borderLeft: activeView === 'media-library' ? '3px solid #38BDF8' : '3px solid transparent',
-                transition: 'all 0.15s ease'
-              }}
-              className="exact-nav-link"
-            >
-              <ImageIcon size={16} strokeWidth={activeView === 'media-library' ? 2.2 : 1.9} color={activeView === 'media-library' ? '#38BDF8' : '#FFFFFF'} />
-              <span style={{ fontSize: '13.5px', fontWeight: activeView === 'media-library' ? 650 : 500, color: '#FFFFFF' }}>
-                Media Library
-              </span>
-            </div>
+            {/* Visible for all users */}
+            {renderNavItem('media-library', ImageIcon, 'Media Library')}
 
-            {/* Knowledge Base & Departments (ADMIN ONLY) */}
-            {currentUser?.role === 'admin' && (
-              <>
-                <div
-                  onClick={() => handleNavClick('documents')}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    padding: '9.5px 12px',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    background: activeView === 'documents' ? 'rgba(37, 99, 235, 0.45)' : 'transparent',
-                    color: activeView === 'documents' ? '#38BDF8' : '#FFFFFF',
-                    borderLeft: activeView === 'documents' ? '3px solid #38BDF8' : '3px solid transparent',
-                    transition: 'all 0.15s ease'
-                  }}
-                  className="exact-nav-link"
-                >
-                  <BookOpen size={16} strokeWidth={activeView === 'documents' ? 2.2 : 1.9} color={activeView === 'documents' ? '#38BDF8' : '#FFFFFF'} />
-                  <span style={{ fontSize: '13.5px', fontWeight: activeView === 'documents' ? 650 : 500, color: '#FFFFFF' }}>
-                    Knowledge Base
-                  </span>
-                </div>
+            {/* Every admin: Knowledge Base + Users & Staff (data is scoped by the backend) */}
+            {isAdminUser && renderNavItem('documents', BookOpen, 'Knowledge Base')}
 
-                <div
-                  onClick={() => handleNavClick('departments')}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    padding: '9.5px 12px',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    background: activeView === 'departments' ? 'rgba(37, 99, 235, 0.45)' : 'transparent',
-                    color: activeView === 'departments' ? '#38BDF8' : '#FFFFFF',
-                    borderLeft: activeView === 'departments' ? '3px solid #38BDF8' : '3px solid transparent',
-                    transition: 'all 0.15s ease'
-                  }}
-                  className="exact-nav-link"
-                >
-                  <Building2 size={16} strokeWidth={activeView === 'departments' ? 2.2 : 1.9} color={activeView === 'departments' ? '#38BDF8' : '#FFFFFF'} />
-                  <span style={{ fontSize: '13.5px', fontWeight: activeView === 'departments' ? 650 : 500, color: '#FFFFFF' }}>
-                    Departments
-                  </span>
-                </div>
+            {/* Super Admin only */}
+            {superAdmin && renderNavItem('departments', Building2, 'Departments')}
 
-                <div
-                  onClick={() => handleNavClick('users')}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    padding: '9.5px 12px',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    background: activeView === 'users' ? 'rgba(37, 99, 235, 0.45)' : 'transparent',
-                    color: activeView === 'users' ? '#38BDF8' : '#FFFFFF',
-                    borderLeft: activeView === 'users' ? '3px solid #38BDF8' : '3px solid transparent',
-                    transition: 'all 0.15s ease'
-                  }}
-                  className="exact-nav-link"
-                >
-                  <Users size={16} strokeWidth={activeView === 'users' ? 2.2 : 1.9} color={activeView === 'users' ? '#38BDF8' : '#FFFFFF'} />
-                  <span style={{ fontSize: '13.5px', fontWeight: activeView === 'users' ? 650 : 500, color: '#FFFFFF' }}>
-                    Users & Staff
-                  </span>
-                </div>
+            {isAdminUser && renderNavItem('users', Users, 'Users & Staff')}
 
-                <div
-                  onClick={() => handleNavClick('audit-logs')}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    padding: '9.5px 12px',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    background: activeView === 'audit-logs' ? 'rgba(37, 99, 235, 0.45)' : 'transparent',
-                    color: activeView === 'audit-logs' ? '#38BDF8' : '#FFFFFF',
-                    borderLeft: activeView === 'audit-logs' ? '3px solid #38BDF8' : '3px solid transparent',
-                    transition: 'all 0.15s ease'
-                  }}
-                  className="exact-nav-link"
-                >
-                  <ShieldAlert size={16} strokeWidth={activeView === 'audit-logs' ? 2.2 : 1.9} color={activeView === 'audit-logs' ? '#38BDF8' : '#FFFFFF'} />
-                  <span style={{ fontSize: '13.5px', fontWeight: activeView === 'audit-logs' ? 650 : 500, color: '#FFFFFF' }}>
-                    Audit Logs
-                  </span>
-                </div>
-              </>
-            )}
+            {/* Super Admin only */}
+            {superAdmin && renderNavItem('audit-logs', ShieldAlert, 'Audit Logs')}
           </div>
         )}
 
@@ -778,7 +719,7 @@ export default function Sidebar({
                       {currentUser.name || 'System Admin'}
                     </div>
                     <div style={{ fontSize: '11px', color: '#CBD5E1', textTransform: 'capitalize' }}>
-                      {currentUser.role ? (currentUser.role === 'admin' ? 'Administrator' : currentUser.role) : 'User'}
+                      {roleLabel}
                     </div>
                   </div>
                 </div>

@@ -1,0 +1,91 @@
+const mongoose = require('mongoose');
+const User = require('../models/User');
+
+/**
+ * Shared role / department scope helpers.
+ *
+ *  - Super Admin      : role "admin" with NO departments assigned  -> full access
+ *  - Department Admin : role "admin" with 1+ departments assigned  -> scoped access
+ *  - Staff / User     : role "user"
+ *
+ * Everything is driven by the department ids stored on the user record.
+ */
+
+// Normalises ObjectId, populated object or string into a plain string id.
+function toIdString(value) {
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value === 'object' && value._id) return String(value._id);
+  return String(value);
+}
+
+function uniqueIds(list) {
+  return [...new Set((list || []).map(toIdString).filter(Boolean))];
+}
+
+// Supports both the new `departmentIds` array and the legacy single `departmentId`.
+function getUserDepartmentIds(user) {
+  if (!user) return [];
+  const source =
+    Array.isArray(user.departmentIds) && user.departmentIds.length > 0
+      ? user.departmentIds
+      : user.departmentId
+        ? [user.departmentId]
+        : [];
+  return uniqueIds(source);
+}
+
+function isAdmin(user) {
+  return !!user && user.role === 'admin';
+}
+
+function isSuperAdmin(user) {
+  return isAdmin(user) && getUserDepartmentIds(user).length === 0;
+}
+
+function isScopedAdmin(user) {
+  return isAdmin(user) && getUserDepartmentIds(user).length > 0;
+}
+
+// A scoped admin may manage only STAFF whose departments are ALL inside the admin's own.
+function canManageUser(actor, target) {
+  if (!isAdmin(actor)) return false;
+  if (isSuperAdmin(actor)) return true;
+  if (!target || target.role !== 'user') return false;
+
+  const actorDepts = getUserDepartmentIds(actor);
+  const targetDepts = getUserDepartmentIds(target);
+  return targetDepts.length > 0 && targetDepts.every((id) => actorDepts.includes(id));
+}
+
+const NO_ACCESS_ACTOR = {
+  role: 'user',
+  status: 'suspended',
+  departmentId: null,
+  departmentIds: []
+};
+
+/**
+ * Loads the acting user's CURRENT role and departments from the database, so
+ * access never depends on what the login token or auth middleware happened to
+ * carry. Returns null only when the request has no authenticated user at all.
+ */
+async function resolveActor(req) {
+  if (!req || !req.user) return null;
+
+  const id = toIdString(req.user._id || req.user.id);
+  if (!id || !mongoose.isValidObjectId(id)) return NO_ACCESS_ACTOR;
+
+  const fresh = await User.findById(id).select('role status departmentId departmentIds').lean();
+  return fresh || NO_ACCESS_ACTOR;
+}
+
+module.exports = {
+  toIdString,
+  uniqueIds,
+  getUserDepartmentIds,
+  isAdmin,
+  isSuperAdmin,
+  isScopedAdmin,
+  canManageUser,
+  resolveActor
+};

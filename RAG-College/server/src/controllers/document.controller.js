@@ -10,50 +10,28 @@ const crypto = require('crypto');
 const vectorService = require('../services/vector.service');
 const imageVectorService = require('../services/image-vector.service');
 const { logAction } = require('../services/audit.service');
+const {
+  resolveActor,
+  toIdString,
+  uniqueIds,
+  getUserDepartmentIds,
+  isAdmin,
+  isSuperAdmin,
+  isScopedAdmin
+} = require('../services/access.service');
 
 /* ------------------------------------------------------------------ */
-/* Access-control helpers (all driven by the user's and document's     */
-/* stored department ids - nothing is hardcoded)                       */
+/* Document-specific access helpers                                    */
 /* ------------------------------------------------------------------ */
-
-// Normalises ObjectId, populated object or string into a plain string id.
-function toIdString(value) {
-  if (value === undefined || value === null || value === '') return null;
-  if (typeof value === 'object' && value._id) return String(value._id);
-  return String(value);
-}
-
-function uniqueIds(list) {
-  return [...new Set((list || []).map(toIdString).filter(Boolean))];
-}
-
-function getUserDepartmentIds(user) {
-  if (!user) return [];
-  const source = Array.isArray(user.departmentIds) && user.departmentIds.length > 0
-    ? user.departmentIds
-    : (user.departmentId ? [user.departmentId] : []);
-  return uniqueIds(source);
-}
 
 function getDocumentDepartmentIds(doc) {
-  const source = Array.isArray(doc.departmentIds) && doc.departmentIds.length > 0
-    ? doc.departmentIds
-    : (doc.departmentId ? [doc.departmentId] : []);
+  const source =
+    Array.isArray(doc.departmentIds) && doc.departmentIds.length > 0
+      ? doc.departmentIds
+      : doc.departmentId
+        ? [doc.departmentId]
+        : [];
   return uniqueIds(source);
-}
-
-function isAdmin(user) {
-  return !!user && user.role === 'admin';
-}
-
-// Admin with no departments assigned = Super Admin (full access).
-function isSuperAdmin(user) {
-  return isAdmin(user) && getUserDepartmentIds(user).length === 0;
-}
-
-// Admin with one or more departments assigned = Department Admin (scoped).
-function isScopedAdmin(user) {
-  return isAdmin(user) && getUserDepartmentIds(user).length > 0;
 }
 
 function canReadDocument(user, doc) {
@@ -64,8 +42,7 @@ function canReadDocument(user, doc) {
   return getDocumentDepartmentIds(doc).some((id) => userDepts.includes(id));
 }
 
-// Upload / delete rights. A scoped admin may only manage documents whose
-// departments are ALL within their own assigned departments.
+// A scoped admin may manage a document only if ALL its departments are theirs.
 function canManageDocument(user, doc) {
   if (!isAdmin(user)) return false;
   if (isSuperAdmin(user)) return true;
@@ -115,20 +92,20 @@ function cleanupUploadedFiles(files) {
 async function getDocuments(req, res) {
   try {
     const { departmentId, status, search } = req.query;
-    const user = req.user;
+    const actor = await resolveActor(req);
     const conditions = [];
 
-    if (user) {
-      const userDepts = getUserDepartmentIds(user);
+    if (actor) {
+      const actorDepts = getUserDepartmentIds(actor);
 
-      if (isAdmin(user)) {
+      if (isAdmin(actor)) {
         // Department Admin: only documents in their own departments.
         // Super Admin: no restriction.
-        if (userDepts.length > 0) {
+        if (actorDepts.length > 0) {
           conditions.push({
             $or: [
-              { departmentIds: { $in: userDepts } },
-              { departmentId: { $in: userDepts } }
+              { departmentIds: { $in: actorDepts } },
+              { departmentId: { $in: actorDepts } }
             ]
           });
         }
@@ -136,8 +113,8 @@ async function getDocuments(req, res) {
         conditions.push({
           $or: [
             { isPublic: true },
-            { departmentIds: { $in: userDepts } },
-            { departmentId: { $in: userDepts } }
+            { departmentIds: { $in: actorDepts } },
+            { departmentId: { $in: actorDepts } }
           ]
         });
       }
@@ -167,9 +144,9 @@ async function getDocuments(req, res) {
 
 async function uploadDocuments(req, res) {
   try {
-    const user = req.user;
+    const actor = await resolveActor(req);
 
-    if (!isAdmin(user)) {
+    if (!isAdmin(actor)) {
       cleanupUploadedFiles(req.files);
       return res.status(403).json({ success: false, message: 'Admin privileges required to upload documents' });
     }
@@ -187,8 +164,8 @@ async function uploadDocuments(req, res) {
 
     let isPublic = req.body.isPublic === 'true' || req.body.isPublic === true;
 
-    if (isScopedAdmin(user)) {
-      const userDepts = getUserDepartmentIds(user);
+    if (isScopedAdmin(actor)) {
+      const actorDepts = getUserDepartmentIds(actor);
 
       if (departmentIds.length === 0) {
         cleanupUploadedFiles(req.files);
@@ -198,7 +175,7 @@ async function uploadDocuments(req, res) {
         });
       }
 
-      const outOfScope = departmentIds.filter((id) => !userDepts.includes(id));
+      const outOfScope = departmentIds.filter((id) => !actorDepts.includes(id));
       if (outOfScope.length > 0) {
         cleanupUploadedFiles(req.files);
         return res.status(403).json({
@@ -261,7 +238,8 @@ async function getDocumentById(req, res) {
     const doc = await Document.findById(req.params.id);
     if (!doc) return res.status(404).json({ success: false, message: 'Document not found' });
 
-    if (!canReadDocument(req.user, doc)) {
+    const actor = await resolveActor(req);
+    if (!canReadDocument(actor, doc)) {
       return res.status(403).json({ success: false, message: 'Access denied to this document' });
     }
 
@@ -278,7 +256,8 @@ async function getDocumentFile(req, res) {
       return res.status(404).json({ success: false, message: 'Document record not found' });
     }
 
-    if (!canReadDocument(req.user, doc)) {
+    const actor = await resolveActor(req);
+    if (!canReadDocument(actor, doc)) {
       return res.status(403).json({ success: false, message: 'Access denied to this file' });
     }
 
@@ -297,7 +276,8 @@ async function getDocumentImages(req, res) {
     const doc = await Document.findById(req.params.id);
     if (!doc) return res.status(404).json({ success: false, message: 'Document not found' });
 
-    if (!canReadDocument(req.user, doc)) {
+    const actor = await resolveActor(req);
+    if (!canReadDocument(actor, doc)) {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
 
@@ -313,7 +293,8 @@ async function deleteDocument(req, res) {
     const doc = await Document.findById(req.params.id);
     if (!doc) return res.status(404).json({ success: false, message: 'Document not found' });
 
-    if (!canManageDocument(req.user, doc)) {
+    const actor = await resolveActor(req);
+    if (!canManageDocument(actor, doc)) {
       return res.status(403).json({
         success: false,
         message: 'You do not have permission to delete this document'

@@ -22,6 +22,7 @@ import {
   EyeOff,
   ChevronDown
 } from 'lucide-react';
+import { isDepartmentAdmin } from '../utils/access';
 
 // ── Users page + Add User modal styles (kept in this file; no separate CSS needed) ──
 const MODAL_CSS = `
@@ -525,7 +526,11 @@ async function parseXLSX(arrayBuffer) {
   return parsedRows;
 }
 
-function processParsedRows(rawRows, departments) {
+// `scoped` = the signed-in user is a Department Admin:
+//   - every imported user is a Staff account
+//   - the department must be one of the departments passed in (already limited by the backend)
+function processParsedRows(rawRows, departments, options = {}) {
+  const scoped = !!options.scoped;
   const validUsers = [];
   const errors = [];
 
@@ -535,7 +540,7 @@ function processParsedRows(rawRows, departments) {
     const email = (row.email || row.collegeemail || row.mail || row['collegeemail'] || '').trim().toLowerCase();
     let password = (row.password || row.initialpassword || row.pass || row['initialpassword'] || '').trim();
     let role = (row.role || row.userrole || '').trim().toLowerCase();
-    role = role === 'admin' ? 'admin' : 'user';
+    role = scoped ? 'user' : role === 'admin' ? 'admin' : 'user';
 
     if (!name && !email) return;
 
@@ -570,8 +575,19 @@ function processParsedRows(rawRows, departments) {
       if (match) {
         departmentId = match._id;
         departmentDisplay = `${match.name} (${match.code})`;
+      } else if (scoped) {
+        errors.push(`Row ${rowNum} (${name}): "${row.department || row.dept}" is not one of your departments.`);
+        return;
       } else {
         departmentDisplay = row.department || row.dept || 'Unknown';
+      }
+    } else if (scoped) {
+      if (departments && departments.length === 1) {
+        departmentId = departments[0]._id;
+        departmentDisplay = `${departments[0].name} (${departments[0].code})`;
+      } else {
+        errors.push(`Row ${rowNum} (${name}): Department is required.`);
+        return;
       }
     }
 
@@ -621,6 +637,10 @@ export default function UsersView({
   onDeleteUser,
   currentUser
 }) {
+  const scoped = isDepartmentAdmin(currentUser);
+  // A Department Admin with exactly one department never has to pick it manually.
+  const defaultDeptId = scoped && departments.length === 1 ? departments[0]._id : '';
+
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('all'); // 'all' | 'user' | 'admin'
   const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'active' | 'suspended'
@@ -687,7 +707,11 @@ export default function UsersView({
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      await onCreateUser(formData);
+      await onCreateUser({
+        ...formData,
+        role: scoped ? 'user' : formData.role,
+        departmentId: formData.departmentId || defaultDeptId
+      });
       handleCloseModal();
     } catch {
       // Error toast already handled by caller
@@ -729,7 +753,7 @@ export default function UsersView({
         return;
       }
 
-      const { validUsers, errors } = processParsedRows(rawRows, departments);
+      const { validUsers, errors } = processParsedRows(rawRows, departments, { scoped });
 
       if (validUsers.length === 0) {
         setBulkError('No valid user records could be recognized. Required columns: Name, Email.');
@@ -747,11 +771,16 @@ export default function UsersView({
   };
 
   const handleDownloadTemplate = () => {
-    const csvContent =
+    // Sample rows use a real department from the list this user can access.
+    const sampleDept = departments[0]?.name || 'Department name';
+    let csvContent =
       'Name,Email,Password,Role,Department\n' +
-      'Prof. Alex Johnson,alex.johnson@college.edu,Welcome@2025,user,Computer Science\n' +
-      'Dr. Maria Garcia,maria.garcia@college.edu,Welcome@2025,admin,Electronics\n' +
-      'Prof. Alan Turing,alan.turing@college.edu,Welcome@2025,user,Information Technology\n';
+      `Prof. Alex Johnson,alex.johnson@college.edu,Welcome@2025,user,${sampleDept}\n` +
+      `Prof. Alan Turing,alan.turing@college.edu,Welcome@2025,user,${sampleDept}\n`;
+
+    if (!scoped) {
+      csvContent += `Dr. Maria Garcia,maria.garcia@college.edu,Welcome@2025,admin,${sampleDept}\n`;
+    }
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -825,7 +854,11 @@ export default function UsersView({
       <div className="page-header-row">
         <div>
           <h1 className="page-title">Users &amp; Staff</h1>
-          <p className="page-subtitle">Manage teacher and staff accounts, roles, department scope, and login access.</p>
+          <p className="page-subtitle">
+            {scoped
+              ? 'Manage staff accounts and login access for your departments.'
+              : 'Manage teacher and staff accounts, roles, department scope, and login access.'}
+          </p>
         </div>
         <button
           type="button"
@@ -849,16 +882,18 @@ export default function UsersView({
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <select
-          className="um-filter"
-          value={roleFilter}
-          onChange={(e) => setRoleFilter(e.target.value)}
-          aria-label="Filter by role"
-        >
-          <option value="all">All roles</option>
-          <option value="user">Staff</option>
-          <option value="admin">Admin</option>
-        </select>
+        {!scoped && (
+          <select
+            className="um-filter"
+            value={roleFilter}
+            onChange={(e) => setRoleFilter(e.target.value)}
+            aria-label="Filter by role"
+          >
+            <option value="all">All roles</option>
+            <option value="user">Staff</option>
+            <option value="admin">Admin</option>
+          </select>
+        )}
         <select
           className="um-filter"
           value={statusFilter}
@@ -897,7 +932,9 @@ export default function UsersView({
           </div>
           <div className="empty-title">No users registered yet</div>
           <div className="empty-subtext">
-            Add individual staff or teachers, or bulk-import a spreadsheet to get started.
+            {scoped
+              ? 'No staff in your departments yet. Add individual staff or bulk-import a spreadsheet.'
+              : 'Add individual staff or teachers, or bulk-import a spreadsheet to get started.'}
           </div>
           <div className="empty-actions-row">
             <button
@@ -1172,29 +1209,36 @@ export default function UsersView({
                         <select
                           id="um-role"
                           className="um-input pr"
-                          value={formData.role}
+                          value={scoped ? 'user' : formData.role}
                           onChange={(e) => setFormData({ ...formData, role: e.target.value })}
                           disabled={isSubmitting}
                         >
                           <option value="user">Teacher / Staff</option>
-                          <option value="admin">Administrator</option>
+                          {!scoped && <option value="admin">Administrator</option>}
                         </select>
                         <ChevronDown size={16} className="um-chevron" />
                       </div>
                     </div>
 
                     <div className="um-field">
-                      <label className="um-label" htmlFor="um-dept">Department</label>
+                      <label className="um-label" htmlFor="um-dept">
+                        Department{scoped && <span className="req">*</span>}
+                      </label>
                       <div className="um-input-wrap">
                         <Building2 size={16} className="um-icon" />
                         <select
                           id="um-dept"
                           className="um-input pr"
-                          value={formData.departmentId}
+                          value={formData.departmentId || defaultDeptId}
                           onChange={(e) => setFormData({ ...formData, departmentId: e.target.value })}
+                          required={scoped}
                           disabled={isSubmitting}
                         >
-                          <option value="">All / General</option>
+                          {scoped ? (
+                            <option value="" disabled>Select department</option>
+                          ) : (
+                            <option value="">All / General</option>
+                          )}
                           {departments.map((d) => (
                             <option key={d._id} value={d._id}>
                               {d.name} ({d.code})
@@ -1239,7 +1283,10 @@ export default function UsersView({
                     <div className="um-info-text">
                       <span className="um-info-icon"><FileSpreadsheet size={16} /></span>
                       <span>
-                        Required columns: <strong>Name, Email</strong>. Optional: Password, Role, Department.
+                        Required columns: <strong>Name, Email</strong>.{' '}
+                        {scoped
+                          ? 'Optional: Password, Department. Everyone is added as staff in one of your departments.'
+                          : 'Optional: Password, Role, Department.'}
                       </span>
                     </div>
                     <button type="button" className="um-btn um-btn-ghost um-btn-sm" onClick={handleDownloadTemplate}>
