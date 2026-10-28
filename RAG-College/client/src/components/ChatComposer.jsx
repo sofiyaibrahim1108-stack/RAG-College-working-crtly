@@ -58,46 +58,55 @@ export default function ChatComposer({
     ? `Type your message in [${selectedDepartmentName}]...`
     : 'Type your message...';
 
+  // Check if any upload or drive handler is available (Admin only)
+  const canAttach = !!(onOpenUpload || onOpenDrive);
+
   return (
     <div className="composer-outer">
       <div className="composer-pill-box">
-        {/* Attachment Paperclip Button & Popover */}
-        <div style={{ position: 'relative' }} ref={attachMenuRef}>
-          <button
-            type="button"
-            className={`btn-composer-attach ${attachMenuOpen ? 'active' : ''}`}
-            onClick={() => setAttachMenuOpen((prev) => !prev)}
-            title="Attach file or import from Google Drive"
-            aria-label="Attach file"
-          >
-            <Paperclip size={18} strokeWidth={2} />
-          </button>
+        {/* Attachment Paperclip Button & Popover (Shown only for Admin) */}
+        {canAttach && (
+          <div style={{ position: 'relative' }} ref={attachMenuRef}>
+            <button
+              type="button"
+              className={`btn-composer-attach ${attachMenuOpen ? 'active' : ''}`}
+              onClick={() => setAttachMenuOpen((prev) => !prev)}
+              title="Attach file or import from Google Drive"
+              aria-label="Attach file"
+            >
+              <Paperclip size={18} strokeWidth={2} />
+            </button>
 
-          {attachMenuOpen && (
-            <div className="composer-attach-dropdown">
-              <div
-                className="attach-dropdown-item"
-                onClick={() => {
-                  setAttachMenuOpen(false);
-                  if (onOpenUpload) onOpenUpload();
-                }}
-              >
-                <FileUp size={15} />
-                <span>Upload Document</span>
+            {attachMenuOpen && (
+              <div className="composer-attach-dropdown">
+                {onOpenUpload && (
+                  <div
+                    className="attach-dropdown-item"
+                    onClick={() => {
+                      setAttachMenuOpen(false);
+                      onOpenUpload();
+                    }}
+                  >
+                    <FileUp size={15} />
+                    <span>Upload Document</span>
+                  </div>
+                )}
+                {onOpenDrive && (
+                  <div
+                    className="attach-dropdown-item"
+                    onClick={() => {
+                      setAttachMenuOpen(false);
+                      onOpenDrive();
+                    }}
+                  >
+                    <GoogleDriveIcon size={15} />
+                    <span>Google Drive</span>
+                  </div>
+                )}
               </div>
-              <div
-                className="attach-dropdown-item"
-                onClick={() => {
-                  setAttachMenuOpen(false);
-                  if (onOpenDrive) onOpenDrive();
-                }}
-              >
-                <GoogleDriveIcon size={15} />
-                <span>Google Drive</span>
-              </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
 
         {/* Visual Mode Dropdown: between paperclip and textarea */}
         <VisualModeDropdown visualMode={visualMode} setVisualMode={setVisualMode} />
