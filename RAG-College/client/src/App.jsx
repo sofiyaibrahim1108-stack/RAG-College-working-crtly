@@ -215,7 +215,7 @@ export default function App() {
     } catch {
       // fallback
     }
-    return 'dark';
+    return 'light';
   });
 
   useEffect(() => {

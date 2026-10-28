@@ -7,6 +7,7 @@ const Document = require('../models/Document');
 const Department = require('../models/Department');
 const { processDocument } = require('../services/processor.service');
 const { CLIENT_URL } = require('../config/env');
+const { logAction } = require('../services/audit.service');
 
 const UPLOAD_DIR = path.resolve(__dirname, '../../data/uploads');
 
@@ -182,10 +183,10 @@ exports.getFileMetadata = async (req, res) => {
   }
 };
 
-// POST /api/drive/import
+// POST /api/drive/import - Secured Google Drive file import
 exports.importFile = async (req, res) => {
   try {
-    const { fileId, forceReimport, simulatedFilePath } = req.body;
+    const { fileId, forceReimport } = req.body;
     const isPublic = req.body.isPublic === true || req.body.isPublic === 'true';
     let departmentIds = req.body.departmentIds;
 
@@ -206,7 +207,7 @@ exports.importFile = async (req, res) => {
       });
     }
 
-    if (!simulatedFilePath && !googleDriveService.isAuthenticated()) {
+    if (!googleDriveService.isAuthenticated()) {
       return res.status(401).json({
         success: false,
         message: 'Google Drive is not authenticated. Please connect first.'
@@ -245,37 +246,8 @@ exports.importFile = async (req, res) => {
       });
     }
 
-    let downloaded;
-    if (req.body.simulatedFilePath && fs.existsSync(req.body.simulatedFilePath)) {
-      const simPath = req.body.simulatedFilePath;
-      const stats = fs.statSync(simPath);
-      const ext = path.extname(simPath).toLowerCase();
-      const filename = req.body.originalFilename || path.basename(simPath);
-      const safeName = path.basename(filename).replace(/[^a-zA-Z0-9._-]/g, '_');
-      const targetPath = path.join(UPLOAD_DIR, `drive_${fileId}_${Date.now()}_${safeName}`);
-      fs.copyFileSync(simPath, targetPath);
-
-      downloaded = {
-        filePath: targetPath,
-        originalFilename: filename,
-        fileType: ext.replace('.', '') || 'pdf',
-        fileSize: stats.size,
-        mimeType: req.body.mimeType || 'application/pdf',
-        exportMimeType: null,
-        webViewLink: `https://drive.google.com/file/d/${fileId}/view`,
-        modifiedTime: new Date(),
-        isGoogleNative: false
-      };
-    } else {
-      if (!googleDriveService.isAuthenticated()) {
-        return res.status(401).json({
-          success: false,
-          message: 'Google Drive is not authenticated. Please connect first.'
-        });
-      }
-      console.log(`[Google Drive Import] Downloading/exporting fileId: ${fileId}...`);
-      downloaded = await googleDriveService.downloadFile(fileId, UPLOAD_DIR);
-    }
+    console.log(`[Google Drive Import] Downloading/exporting fileId: ${fileId}...`);
+    const downloaded = await googleDriveService.downloadFile(fileId, UPLOAD_DIR);
 
     const fileHash = await computeFileHash(downloaded.filePath);
 
@@ -342,6 +314,15 @@ exports.importFile = async (req, res) => {
       const count = await Document.countDocuments({ departmentIds: dId });
       await Department.findByIdAndUpdate(dId, { documentCount: count });
     }
+
+    // Record Audit Log for Drive Import
+    logAction({
+      req,
+      action: 'DRIVE_FILE_IMPORT',
+      resourceType: 'Document',
+      resourceId: doc._id,
+      details: { originalFilename: doc.originalFilename, fileId }
+    });
 
     console.log(`[Google Drive Import] Processing document through existing RAG pipeline: "${doc.originalFilename}" (${doc._id})...`);
     await processDocument(doc._id);

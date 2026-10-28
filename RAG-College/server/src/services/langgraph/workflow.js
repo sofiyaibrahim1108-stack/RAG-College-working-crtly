@@ -116,7 +116,8 @@ RULES:
 
 5. FORMATTING:
    - Write the answer in your own words as clear sentences. Do not wrap the whole answer in quotation marks.
-   - Wrap every code snippet, operator, symbol, keyword, function name and literal value in single backticks, for example \`value\`, so it renders exactly as written.`,
+   - Wrap every code snippet, operator, symbol, keyword, function name and literal value in single backticks, for example \`value\`, so it renders exactly as written.
+   - Always structure your answers and explanations using clean bullet points and bold headers for key terms.`,
 
     generationRetrySystem: `You are a verified knowledge assistant.
 A previous attempt concluded the context had no answer. Read every source in the verified context again.

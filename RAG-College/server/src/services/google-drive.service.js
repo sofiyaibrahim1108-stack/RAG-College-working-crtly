@@ -1,14 +1,53 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { google } = require('googleapis');
 const {
   GOOGLE_CLIENT_ID,
   GOOGLE_CLIENT_SECRET,
-  GOOGLE_REDIRECT_URI
+  GOOGLE_REDIRECT_URI,
+  JWT_SECRET
 } = require('../config/env');
 
 const TOKEN_PATH = path.resolve(__dirname, '../../data/drive-tokens.json');
 const DRIVE_SCOPES = ['https://www.googleapis.com/auth/drive.readonly'];
+
+// AES-256-GCM Encryption Helper for securing OAuth tokens at rest
+const ENCRYPTION_KEY = crypto.createHash('sha256').update(String(JWT_SECRET)).digest(); // 32 bytes key
+const AUTH_TAG_LENGTH = 16;
+
+function encryptTokenData(tokenObject) {
+  const plaintext = JSON.stringify(tokenObject);
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', ENCRYPTION_KEY, iv);
+  const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+  return JSON.stringify({
+    iv: iv.toString('hex'),
+    authTag: authTag.toString('hex'),
+    data: encrypted.toString('hex')
+  });
+}
+
+function decryptTokenData(rawString) {
+  try {
+    const parsed = JSON.parse(rawString);
+    if (!parsed.iv || !parsed.authTag || !parsed.data) {
+      // Fallback if file was stored in legacy plaintext format
+      return parsed;
+    }
+    const iv = Buffer.from(parsed.iv, 'hex');
+    const authTag = Buffer.from(parsed.authTag, 'hex');
+    const encrypted = Buffer.from(parsed.data, 'hex');
+    const decipher = crypto.createDecipheriv('aes-256-gcm', ENCRYPTION_KEY, iv);
+    decipher.setAuthTag(authTag);
+    const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]);
+    return JSON.parse(decrypted.toString('utf8'));
+  } catch (err) {
+    console.warn('[GoogleDriveService] Failed to decrypt token data, trying plaintext parse:', err.message);
+    return JSON.parse(rawString);
+  }
+}
 
 // Mapping of supported Google Native types to export MIME types and file extensions
 const GOOGLE_NATIVE_MAP = {
@@ -89,8 +128,8 @@ class GoogleDriveService {
   loadSavedTokens() {
     try {
       if (fs.existsSync(TOKEN_PATH)) {
-        const data = fs.readFileSync(TOKEN_PATH, 'utf-8');
-        this.tokens = JSON.parse(data);
+        const raw = fs.readFileSync(TOKEN_PATH, 'utf-8');
+        this.tokens = decryptTokenData(raw);
         if (this.oauth2Client && this.tokens) {
           this.oauth2Client.setCredentials(this.tokens);
         }
@@ -108,7 +147,8 @@ class GoogleDriveService {
         fs.mkdirSync(dir, { recursive: true });
       }
       const merged = { ...this.tokens, ...tokens };
-      fs.writeFileSync(TOKEN_PATH, JSON.stringify(merged, null, 2), 'utf-8');
+      const encryptedPayload = encryptTokenData(merged);
+      fs.writeFileSync(TOKEN_PATH, encryptedPayload, 'utf-8');
       this.tokens = merged;
       if (this.oauth2Client) {
         this.oauth2Client.setCredentials(merged);
@@ -144,9 +184,16 @@ class GoogleDriveService {
     return { success: true };
   }
 
-  disconnect() {
+  async disconnect() {
     this.tokens = null;
     if (this.oauth2Client) {
+      try {
+        if (this.oauth2Client.credentials && this.oauth2Client.credentials.access_token) {
+          await this.oauth2Client.revokeToken(this.oauth2Client.credentials.access_token);
+        }
+      } catch (e) {
+        // Ignore revocation errors if token already expired
+      }
       this.oauth2Client.setCredentials({});
     }
     try {

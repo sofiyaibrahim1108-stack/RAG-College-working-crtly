@@ -4,6 +4,10 @@ const fs = require('fs');
 const path = require('path');
 const mongoose = require('mongoose');
 const Image = require('../models/Image');
+const { protect } = require('../middlewares/auth.middleware');
+
+// Apply authentication middleware to block unauthenticated access
+router.use(protect);
 
 // Handler for serving physical image file safely
 async function serveImageFile(req, res) {

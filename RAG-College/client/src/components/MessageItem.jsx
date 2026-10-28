@@ -17,6 +17,19 @@ import {
 } from 'lucide-react';
 import { GoogleDriveIcon } from './Icons';
 
+// Automatically normalize API_BASE to strip trailing /api to prevent double /api/api paths
+const API_BASE = (import.meta.env.VITE_API_BASE || 'http://localhost:5000').replace(/\/api\/?$/, '');
+
+// Helper to append auth token query string for secured image tags
+function getAuthenticatedImageUrl(imgId) {
+  const token =
+    localStorage.getItem('token') ||
+    localStorage.getItem('auth_token') ||
+    localStorage.getItem('jwt');
+  const cleanToken = token ? token.replace(/^"|"$/g, '') : '';
+  return `${API_BASE}/api/images/${imgId}/file${cleanToken ? `?token=${encodeURIComponent(cleanToken)}` : ''}`;
+}
+
 /**
  * Process text nodes to render citation badges [1], [2], highlight ==...==,
  * and inline markdown images ![alt](url) that ReactMarkdown doesn't handle.
@@ -281,7 +294,7 @@ export default function MessageItem({
         headers['Authorization'] = `Bearer ${token.replace(/^"|"$/g, '')}`;
       }
 
-      const response = await fetch('http://localhost:5000/api/chat/feedback', {
+      const response = await fetch(`${API_BASE}/api/chat/feedback`, {
         method: 'POST',
         headers,
         body: JSON.stringify({
@@ -332,11 +345,37 @@ export default function MessageItem({
     setActiveCitationPreview(src);
   };
 
+  // Authenticated file open handler to prevent 401 Unauthorized errors on protected file downloads
+  const handleAuthenticatedOpen = async (fileUrl) => {
+    try {
+      const token =
+        localStorage.getItem('token') ||
+        localStorage.getItem('auth_token') ||
+        localStorage.getItem('jwt');
+
+      const headers = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token.replace(/^"|"$/g, '')}`;
+      }
+
+      const response = await fetch(fileUrl, { headers });
+      if (!response.ok) {
+        throw new Error('Failed to load file with authentication');
+      }
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      window.open(blobUrl, '_blank', 'noopener,noreferrer');
+    } catch (err) {
+      console.error('Error opening file securely:', err);
+      window.open(fileUrl, '_blank', 'noopener,noreferrer');
+    }
+  };
+
   const handleOpenFullDocument = (src) => {
     if (src.type === 'image' || src.imageId) {
       const imgId = src.imageId || src._id;
       if (imgId) {
-        window.open(`http://localhost:5000/api/images/${imgId}/file`, '_blank', 'noopener,noreferrer');
+        handleAuthenticatedOpen(`${API_BASE}/api/images/${imgId}/file`);
         return;
       }
     }
@@ -351,8 +390,8 @@ export default function MessageItem({
 
     const docId = src.documentId?._id || src.documentId;
     if (docId) {
-      const docFileUrl = `http://localhost:5000/api/documents/${docId}/file`;
-      window.open(docFileUrl, '_blank', 'noopener,noreferrer');
+      const docFileUrl = `${API_BASE}/api/documents/${docId}/file`;
+      handleAuthenticatedOpen(docFileUrl);
       return;
     }
 
@@ -471,7 +510,7 @@ export default function MessageItem({
             <div className="attached-images-grid">
               {imageSources.map((imgSrc, imgIdx) => {
                 const imgId = imgSrc.imageId || imgSrc._id;
-                const fileUrl = `http://localhost:5000/api/images/${imgId}/file`;
+                const fileUrl = getAuthenticatedImageUrl(imgId);
                 const citNum = imgSrc.citationIndex || (imgIdx + 1);
 
                 return (
@@ -715,7 +754,7 @@ export default function MessageItem({
                     </div>
                     <div style={{ textAlign: 'center', background: '#F8FAFC', borderRadius: '8px', padding: '12px', border: '1px solid var(--border)', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
                       <img
-                        src={`http://localhost:5000/api/images/${activeCitationPreview.imageId || activeCitationPreview._id}/file`}
+                        src={getAuthenticatedImageUrl(activeCitationPreview.imageId || activeCitationPreview._id)}
                         alt={activeCitationPreview.caption || activeCitationPreview.filename || 'Extracted diagram'}
                         style={{ maxWidth: '100%', maxHeight: '42vh', objectFit: 'contain', borderRadius: '6px' }}
                         onError={(e) => {

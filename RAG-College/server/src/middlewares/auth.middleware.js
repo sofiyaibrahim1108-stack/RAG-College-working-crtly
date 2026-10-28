@@ -5,12 +5,14 @@ const User = require('../models/User');
 const protect = async (req, res, next) => {
   let token;
 
-  // 1. Extract Bearer Token
+  // 1. Extract Bearer Token or Query String Token (for image tags)
   if (
     req.headers.authorization &&
     req.headers.authorization.startsWith('Bearer')
   ) {
     token = req.headers.authorization.split(' ')[1];
+  } else if (req.query && req.query.token) {
+    token = req.query.token;
   }
 
   if (!token) {
