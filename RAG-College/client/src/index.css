@@ -5923,6 +5923,33 @@ body {
   background: rgba(239, 68, 68, 0.18) !important;
 }
 
+/* Sidebar Brightness Enhancements for Icons & Text */
+.sidebar, 
+.sidebar span, 
+.sidebar-chat-row span,
+.exact-nav-link span {
+  color: #FFFFFF !important;
+  opacity: 1 !important;
+}
 
+.sidebar svg {
+  color: #FFFFFF !important;
+  opacity: 1 !important;
+}
+
+/* Specific styling for active or muted state */
+.sidebar-chat-row .history-item-time,
+.brand-subtitle,
+.sidebar-section-title {
+  color: #CBD5E1 !important;
+}
+
+.sidebar-chat-row:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+.exact-nav-link:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+}
 
 

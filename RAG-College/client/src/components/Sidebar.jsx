@@ -125,8 +125,8 @@ export default function Sidebar({
           borderRadius: '8px',
           marginBottom: '2px',
           cursor: 'pointer',
-          background: isActive ? 'rgba(30, 58, 138, 0.45)' : 'transparent',
-          color: isActive ? '#FFFFFF' : '#94A3B8',
+          background: isActive ? 'rgba(37, 99, 235, 0.45)' : 'transparent',
+          color: '#FFFFFF',
           transition: 'all 0.15s ease'
         }}
         className="sidebar-chat-row"
@@ -138,7 +138,7 @@ export default function Sidebar({
           {isPinnedItem ? (
             <Pin size={15} color="#38BDF8" style={{ flexShrink: 0, transform: 'rotate(45deg)' }} />
           ) : (
-            <MessageSquare size={15} style={{ flexShrink: 0, color: isActive ? '#38BDF8' : '#64748B' }} />
+            <MessageSquare size={15} style={{ flexShrink: 0, color: isActive ? '#38BDF8' : '#94A3B8' }} />
           )}
 
           {isEditing ? (
@@ -169,11 +169,11 @@ export default function Sidebar({
             <span
               style={{
                 fontSize: '13.5px',
-                fontWeight: isActive ? 600 : 400,
+                fontWeight: isActive ? 600 : 450,
                 whiteSpace: 'nowrap',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
-                color: isActive ? '#FFFFFF' : '#CBD5E1',
+                color: '#FFFFFF',
                 letterSpacing: '-0.1px'
               }}
               title={conv.title || 'Untitled Conversation'}
@@ -203,7 +203,7 @@ export default function Sidebar({
               style={{
                 background: 'none',
                 border: 'none',
-                color: '#64748B',
+                color: '#94A3B8',
                 padding: '3px',
                 borderRadius: '4px',
                 cursor: 'pointer',
@@ -222,7 +222,7 @@ export default function Sidebar({
                   left: menuPos.left,
                   width: '140px',
                   background: '#0F1D3D',
-                  border: '1px solid rgba(255, 255, 255, 0.12)',
+                  border: '1px solid rgba(255, 255, 255, 0.15)',
                   borderRadius: '8px',
                   boxShadow: '0 12px 30px -5px rgba(0,0,0,0.6)',
                   padding: '4px',
@@ -242,7 +242,7 @@ export default function Sidebar({
                     padding: '7px 9px',
                     borderRadius: '6px',
                     fontSize: '12.5px',
-                    color: '#E2E8F0',
+                    color: '#FFFFFF',
                     cursor: 'pointer'
                   }}
                   className="dropdown-menu-item"
@@ -260,7 +260,7 @@ export default function Sidebar({
                     padding: '7px 9px',
                     borderRadius: '6px',
                     fontSize: '12.5px',
-                    color: '#E2E8F0',
+                    color: '#FFFFFF',
                     cursor: 'pointer'
                   }}
                   className="dropdown-menu-item"
@@ -306,7 +306,7 @@ export default function Sidebar({
           width: isCollapsed ? '68px' : '285px',
           height: '100vh',
           background: '#070E1E',
-          borderRight: '1px solid rgba(255, 255, 255, 0.07)',
+          borderRight: '1px solid rgba(255, 255, 255, 0.1)',
           display: 'flex',
           flexDirection: 'column',
           transition: 'width 0.22s cubic-bezier(0.4, 0, 0.2, 1)',
@@ -343,7 +343,7 @@ export default function Sidebar({
                   <div style={{ fontSize: '15px', fontWeight: 700, color: '#FFFFFF', letterSpacing: '-0.2px', lineHeight: 1.2 }}>
                     College RAG
                   </div>
-                  <div style={{ fontSize: '11.5px', color: '#64748B', fontWeight: 450 }}>
+                  <div style={{ fontSize: '11.5px', color: '#94A3B8', fontWeight: 500 }}>
                     Knowledge Assistant
                   </div>
                 </div>
@@ -358,7 +358,7 @@ export default function Sidebar({
                   style={{
                     background: showTopSearch ? '#0F1A30' : 'transparent',
                     border: 'none',
-                    color: showTopSearch ? '#38BDF8' : '#64748B',
+                    color: showTopSearch ? '#38BDF8' : '#CBD5E1',
                     cursor: 'pointer',
                     padding: '6px',
                     borderRadius: '6px',
@@ -378,7 +378,7 @@ export default function Sidebar({
                     style={{
                       background: 'none',
                       border: 'none',
-                      color: '#64748B',
+                      color: '#CBD5E1',
                       cursor: 'pointer',
                       padding: '6px',
                       borderRadius: '6px',
@@ -397,7 +397,7 @@ export default function Sidebar({
               type="button"
               onClick={onToggleCollapse}
               title="Expand sidebar"
-              style={{ background: 'none', border: 'none', color: '#94A3B8', cursor: 'pointer', padding: '6px' }}
+              style={{ background: 'none', border: 'none', color: '#FFFFFF', cursor: 'pointer', padding: '6px' }}
             >
               <PanelLeftOpen size={18} />
             </button>
@@ -417,7 +417,7 @@ export default function Sidebar({
                 style={{
                   width: '100%',
                   background: '#0F1A30',
-                  border: '1px solid rgba(255, 255, 255, 0.12)',
+                  border: '1px solid rgba(255, 255, 255, 0.18)',
                   borderRadius: '7px',
                   padding: '6px 26px 6px 10px',
                   fontSize: '12.5px',
@@ -430,7 +430,7 @@ export default function Sidebar({
                 <button
                   type="button"
                   onClick={() => setSearchQuery('')}
-                  style={{ position: 'absolute', right: '6px', top: '7px', background: 'none', border: 'none', color: '#64748B', cursor: 'pointer' }}
+                  style={{ position: 'absolute', right: '6px', top: '7px', background: 'none', border: 'none', color: '#CBD5E1', cursor: 'pointer' }}
                 >
                   <X size={13} />
                 </button>
@@ -458,7 +458,7 @@ export default function Sidebar({
               padding: isCollapsed ? '10px 0' : '9.5px 14px',
               borderRadius: '9px',
               background: '#0F1A30',
-              border: '1px solid rgba(255, 255, 255, 0.08)',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
               color: '#FFFFFF',
               fontSize: '13.5px',
               fontWeight: 600,
@@ -472,13 +472,13 @@ export default function Sidebar({
           </button>
         </div>
 
-        {/* 3. MANAGE Section (Role-based: Media Library for Users, Admin items only for Admins) */}
+        {/* 3. MANAGE Section */}
         {!isCollapsed && (
           <div style={{ padding: '0 14px 16px', display: 'flex', flexDirection: 'column', gap: '3px' }}>
             <div style={{
               fontSize: '11px',
               fontWeight: 700,
-              color: '#64748B',
+              color: '#94A3B8',
               textTransform: 'uppercase',
               letterSpacing: '0.8px',
               padding: '0 8px 6px'
@@ -496,15 +496,15 @@ export default function Sidebar({
                 padding: '9.5px 12px',
                 borderRadius: '8px',
                 cursor: 'pointer',
-                background: activeView === 'media-library' ? 'rgba(30, 58, 138, 0.45)' : 'transparent',
-                color: activeView === 'media-library' ? '#38BDF8' : '#CBD5E1',
+                background: activeView === 'media-library' ? 'rgba(37, 99, 235, 0.45)' : 'transparent',
+                color: activeView === 'media-library' ? '#38BDF8' : '#FFFFFF',
                 borderLeft: activeView === 'media-library' ? '3px solid #38BDF8' : '3px solid transparent',
                 transition: 'all 0.15s ease'
               }}
               className="exact-nav-link"
             >
-              <ImageIcon size={16} strokeWidth={activeView === 'media-library' ? 2.2 : 1.8} />
-              <span style={{ fontSize: '13.5px', fontWeight: activeView === 'media-library' ? 650 : 500 }}>
+              <ImageIcon size={16} strokeWidth={activeView === 'media-library' ? 2.2 : 1.9} color={activeView === 'media-library' ? '#38BDF8' : '#FFFFFF'} />
+              <span style={{ fontSize: '13.5px', fontWeight: activeView === 'media-library' ? 650 : 500, color: '#FFFFFF' }}>
                 Media Library
               </span>
             </div>
@@ -521,15 +521,15 @@ export default function Sidebar({
                     padding: '9.5px 12px',
                     borderRadius: '8px',
                     cursor: 'pointer',
-                    background: activeView === 'documents' ? 'rgba(30, 58, 138, 0.45)' : 'transparent',
-                    color: activeView === 'documents' ? '#38BDF8' : '#CBD5E1',
+                    background: activeView === 'documents' ? 'rgba(37, 99, 235, 0.45)' : 'transparent',
+                    color: activeView === 'documents' ? '#38BDF8' : '#FFFFFF',
                     borderLeft: activeView === 'documents' ? '3px solid #38BDF8' : '3px solid transparent',
                     transition: 'all 0.15s ease'
                   }}
                   className="exact-nav-link"
                 >
-                  <BookOpen size={16} strokeWidth={activeView === 'documents' ? 2.2 : 1.8} />
-                  <span style={{ fontSize: '13.5px', fontWeight: activeView === 'documents' ? 650 : 500 }}>
+                  <BookOpen size={16} strokeWidth={activeView === 'documents' ? 2.2 : 1.9} color={activeView === 'documents' ? '#38BDF8' : '#FFFFFF'} />
+                  <span style={{ fontSize: '13.5px', fontWeight: activeView === 'documents' ? 650 : 500, color: '#FFFFFF' }}>
                     Knowledge Base
                   </span>
                 </div>
@@ -543,15 +543,15 @@ export default function Sidebar({
                     padding: '9.5px 12px',
                     borderRadius: '8px',
                     cursor: 'pointer',
-                    background: activeView === 'departments' ? 'rgba(30, 58, 138, 0.45)' : 'transparent',
-                    color: activeView === 'departments' ? '#38BDF8' : '#CBD5E1',
+                    background: activeView === 'departments' ? 'rgba(37, 99, 235, 0.45)' : 'transparent',
+                    color: activeView === 'departments' ? '#38BDF8' : '#FFFFFF',
                     borderLeft: activeView === 'departments' ? '3px solid #38BDF8' : '3px solid transparent',
                     transition: 'all 0.15s ease'
                   }}
                   className="exact-nav-link"
                 >
-                  <Building2 size={16} strokeWidth={activeView === 'departments' ? 2.2 : 1.8} />
-                  <span style={{ fontSize: '13.5px', fontWeight: activeView === 'departments' ? 650 : 500 }}>
+                  <Building2 size={16} strokeWidth={activeView === 'departments' ? 2.2 : 1.9} color={activeView === 'departments' ? '#38BDF8' : '#FFFFFF'} />
+                  <span style={{ fontSize: '13.5px', fontWeight: activeView === 'departments' ? 650 : 500, color: '#FFFFFF' }}>
                     Departments
                   </span>
                 </div>
@@ -565,15 +565,15 @@ export default function Sidebar({
                     padding: '9.5px 12px',
                     borderRadius: '8px',
                     cursor: 'pointer',
-                    background: activeView === 'users' ? 'rgba(30, 58, 138, 0.45)' : 'transparent',
-                    color: activeView === 'users' ? '#38BDF8' : '#CBD5E1',
+                    background: activeView === 'users' ? 'rgba(37, 99, 235, 0.45)' : 'transparent',
+                    color: activeView === 'users' ? '#38BDF8' : '#FFFFFF',
                     borderLeft: activeView === 'users' ? '3px solid #38BDF8' : '3px solid transparent',
                     transition: 'all 0.15s ease'
                   }}
                   className="exact-nav-link"
                 >
-                  <Users size={16} strokeWidth={activeView === 'users' ? 2.2 : 1.8} />
-                  <span style={{ fontSize: '13.5px', fontWeight: activeView === 'users' ? 650 : 500 }}>
+                  <Users size={16} strokeWidth={activeView === 'users' ? 2.2 : 1.9} color={activeView === 'users' ? '#38BDF8' : '#FFFFFF'} />
+                  <span style={{ fontSize: '13.5px', fontWeight: activeView === 'users' ? 650 : 500, color: '#FFFFFF' }}>
                     Users & Staff
                   </span>
                 </div>
@@ -587,15 +587,15 @@ export default function Sidebar({
                     padding: '9.5px 12px',
                     borderRadius: '8px',
                     cursor: 'pointer',
-                    background: activeView === 'audit-logs' ? 'rgba(30, 58, 138, 0.45)' : 'transparent',
-                    color: activeView === 'audit-logs' ? '#38BDF8' : '#CBD5E1',
+                    background: activeView === 'audit-logs' ? 'rgba(37, 99, 235, 0.45)' : 'transparent',
+                    color: activeView === 'audit-logs' ? '#38BDF8' : '#FFFFFF',
                     borderLeft: activeView === 'audit-logs' ? '3px solid #38BDF8' : '3px solid transparent',
                     transition: 'all 0.15s ease'
                   }}
                   className="exact-nav-link"
                 >
-                  <ShieldAlert size={16} strokeWidth={activeView === 'audit-logs' ? 2.2 : 1.8} />
-                  <span style={{ fontSize: '13.5px', fontWeight: activeView === 'audit-logs' ? 650 : 500 }}>
+                  <ShieldAlert size={16} strokeWidth={activeView === 'audit-logs' ? 2.2 : 1.9} color={activeView === 'audit-logs' ? '#38BDF8' : '#FFFFFF'} />
+                  <span style={{ fontSize: '13.5px', fontWeight: activeView === 'audit-logs' ? 650 : 500, color: '#FFFFFF' }}>
                     Audit Logs
                   </span>
                 </div>
@@ -611,7 +611,7 @@ export default function Sidebar({
               padding: '6px 8px 8px',
               fontSize: '11px',
               fontWeight: 700,
-              color: '#64748B',
+              color: '#94A3B8',
               textTransform: 'uppercase',
               letterSpacing: '0.8px'
             }}>
@@ -636,7 +636,7 @@ export default function Sidebar({
               )}
 
               {filteredConversations.length === 0 ? (
-                <div style={{ padding: '24px 10px', textAlign: 'center', color: '#64748B', fontSize: '12.5px' }}>
+                <div style={{ padding: '24px 10px', textAlign: 'center', color: '#94A3B8', fontSize: '12.5px' }}>
                   No conversations yet
                 </div>
               ) : (
@@ -663,7 +663,7 @@ export default function Sidebar({
                 left: '14px',
                 right: '14px',
                 background: '#0F1A30',
-                border: '1px solid rgba(255, 255, 255, 0.12)',
+                border: '1px solid rgba(255, 255, 255, 0.15)',
                 borderRadius: '12px',
                 boxShadow: '0 16px 36px -4px rgba(0, 0, 0, 0.7)',
                 padding: '6px',
@@ -683,12 +683,12 @@ export default function Sidebar({
                   borderRadius: '7px',
                   fontSize: '13px',
                   fontWeight: 500,
-                  color: '#CBD5E1',
+                  color: '#FFFFFF',
                   cursor: 'pointer'
                 }}
                 className="dropdown-menu-item"
               >
-                <User size={15} color="#94A3B8" />
+                <User size={15} color="#38BDF8" />
                 <span>Profile</span>
               </div>
 
@@ -705,16 +705,16 @@ export default function Sidebar({
                   borderRadius: '7px',
                   fontSize: '13px',
                   fontWeight: 500,
-                  color: '#CBD5E1',
+                  color: '#FFFFFF',
                   cursor: 'pointer'
                 }}
                 className="dropdown-menu-item"
               >
-                <Settings size={15} color="#94A3B8" />
+                <Settings size={15} color="#38BDF8" />
                 <span>Settings</span>
               </div>
 
-              <div style={{ height: '1px', background: 'rgba(255, 255, 255, 0.08)', margin: '4px 0' }} />
+              <div style={{ height: '1px', background: 'rgba(255, 255, 255, 0.1)', margin: '4px 0' }} />
 
               <div
                 onClick={() => {
@@ -751,7 +751,7 @@ export default function Sidebar({
                   padding: '9px 12px',
                   borderRadius: '10px',
                   background: '#0D172E',
-                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  border: '1px solid rgba(255, 255, 255, 0.12)',
                   cursor: 'pointer',
                   transition: 'background 0.15s ease'
                 }}
@@ -762,7 +762,7 @@ export default function Sidebar({
                     width: '32px',
                     height: '32px',
                     borderRadius: '50%',
-                    background: '#1D4ED8',
+                    background: '#2563EB',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -777,16 +777,16 @@ export default function Sidebar({
                     <div style={{ fontSize: '13.5px', fontWeight: 600, color: '#FFFFFF', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {currentUser.name || 'System Admin'}
                     </div>
-                    <div style={{ fontSize: '11px', color: '#64748B', textTransform: 'capitalize' }}>
+                    <div style={{ fontSize: '11px', color: '#CBD5E1', textTransform: 'capitalize' }}>
                       {currentUser.role ? (currentUser.role === 'admin' ? 'Administrator' : currentUser.role) : 'User'}
                     </div>
                   </div>
                 </div>
 
                 {isProfileMenuOpen ? (
-                  <ChevronDown size={15} color="#94A3B8" />
+                  <ChevronDown size={15} color="#FFFFFF" />
                 ) : (
-                  <ChevronUp size={15} color="#94A3B8" />
+                  <ChevronUp size={15} color="#FFFFFF" />
                 )}
               </div>
             ) : (
@@ -823,7 +823,7 @@ export default function Sidebar({
                   width: '34px',
                   height: '34px',
                   borderRadius: '50%',
-                  background: '#1D4ED8',
+                  background: '#2563EB',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',

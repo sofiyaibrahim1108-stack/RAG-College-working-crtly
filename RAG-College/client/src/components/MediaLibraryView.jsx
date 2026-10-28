@@ -135,55 +135,57 @@ export default function MediaLibraryView({ onToast }) {
           </p>
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '24px' }}>
+        /* Grid adjusted to medium size cards (minmax 220px instead of 280px) */
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '20px' }}>
           {mediaItems.map((item) => {
             const imgId = item.imageId || item._id;
             const imageUrl = item.imageUrl || getAuthenticatedImageUrl(imgId);
 
             return (
               <div key={item._id} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '12px', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', transition: 'transform 0.15s ease' }}>
+                {/* Image container height reduced to 140px for medium/compact look */}
                 <div
-                  style={{ height: '200px', background: '#0F1A30', cursor: 'pointer', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}
+                  style={{ height: '140px', background: '#0F1A30', cursor: 'pointer', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}
                   onClick={() => setPreviewItem(item)}
                 >
                   <img
                     src={imageUrl}
                     alt={item.caption || 'Saved diagram'}
-                    style={{ width: '100%', height: '100%', objectFit: 'contain', padding: '8px' }}
+                    style={{ width: '100%', height: '100%', objectFit: 'contain', padding: '6px' }}
                     onError={(e) => { e.target.style.display = 'none'; }}
                   />
-                  <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.4)', opacity: 0, transition: 'opacity 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FFF', gap: '6px', fontSize: '0.85rem', fontWeight: 600 }} className="image-hover-layer">
-                    <ExternalLink size={15} />
-                    <span>Zoom Image</span>
+                  <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.4)', opacity: 0, transition: 'opacity 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FFF', gap: '6px', fontSize: '0.8rem', fontWeight: 600 }} className="image-hover-layer">
+                    <ExternalLink size={14} />
+                    <span>Zoom</span>
                   </div>
                 </div>
 
-                <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', flex: 1, justifyContent: 'space-between' }}>
+                <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', flex: 1, justifyContent: 'space-between' }}>
                   <div>
-                    <div style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={item.caption || 'Diagram'}>
+                    <div style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={item.caption || 'Diagram'}>
                       {item.caption || 'Extracted Diagram'}
                     </div>
-                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '3px' }}>
                       {item.pageNumber ? `Page ${item.pageNumber}` : 'Saved Item'} • {new Date(item.savedAt).toLocaleDateString()}
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', gap: '10px', marginTop: '16px', paddingTop: '12px', borderTop: '1px solid var(--border)' }}>
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '12px', paddingTop: '10px', borderTop: '1px solid var(--border)' }}>
                     <button
                       type="button"
                       onClick={() => handleDownload(item)}
-                      style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '8px 12px', background: 'var(--primary)', color: '#FFFFFF', border: 'none', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer' }}
+                      style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', padding: '6px 10px', background: 'var(--primary)', color: '#FFFFFF', border: 'none', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}
                     >
-                      <Download size={14} />
+                      <Download size={13} />
                       <span>Download</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => handleRemove(item._id)}
                       title="Remove from library"
-                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 12px', background: 'rgba(239, 68, 68, 0.1)', color: '#EF4444', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '8px', cursor: 'pointer' }}
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '6px 10px', background: 'rgba(239, 68, 68, 0.1)', color: '#EF4444', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '6px', cursor: 'pointer' }}
                     >
-                      <Trash2 size={15} />
+                      <Trash2 size={14} />
                     </button>
                   </div>
                 </div>
