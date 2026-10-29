@@ -57,6 +57,30 @@ function canManageUser(actor, target) {
   return targetDepts.length > 0 && targetDepts.every((id) => actorDepts.includes(id));
 }
 
+// Departments a document belongs to (supports `departmentIds` array and legacy `departmentId`).
+function getDocumentDepartmentIds(doc) {
+  if (!doc) return [];
+  const source =
+    Array.isArray(doc.departmentIds) && doc.departmentIds.length > 0
+      ? doc.departmentIds
+      : doc.departmentId
+        ? [doc.departmentId]
+        : [];
+  return uniqueIds(source);
+}
+
+// A scoped admin may manage only PRIVATE documents whose departments are ALL their own.
+// Public (all-users) documents are managed by Super Admins only.
+function canManageDocument(user, doc) {
+  if (!isAdmin(user)) return false;
+  if (isSuperAdmin(user)) return true;
+  if (!doc || doc.isPublic) return false;
+
+  const docDepts = getDocumentDepartmentIds(doc);
+  const userDepts = getUserDepartmentIds(user);
+  return docDepts.length > 0 && docDepts.every((id) => userDepts.includes(id));
+}
+
 const NO_ACCESS_ACTOR = {
   role: 'user',
   status: 'suspended',
@@ -87,5 +111,7 @@ module.exports = {
   isSuperAdmin,
   isScopedAdmin,
   canManageUser,
+  getDocumentDepartmentIds,
+  canManageDocument,
   resolveActor
 };

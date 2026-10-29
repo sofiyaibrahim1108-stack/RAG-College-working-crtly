@@ -28,6 +28,7 @@ import {
 } from './api';
 import { Pencil, AlertCircle, RotateCcw, Loader2 } from 'lucide-react';
 import { getFriendlyErrorMessage } from './utils/errorHandler';
+import { isAdmin, isSuperAdmin } from './utils/access';
 
 import Sidebar from './components/Sidebar';
 import ChatHeader from './components/ChatHeader';
@@ -400,8 +401,22 @@ export default function App() {
   }, []);
 
   // RBAC Guard
+  //  - staff: chat + media library
+  //  - Department Admin: staff views + Knowledge Base + Users & Staff
+  //  - Super Admin: everything
   useEffect(() => {
-    if (currentUser && currentUser.role !== 'admin' && activeView !== 'chat' && activeView !== 'media-library') {
+    if (!currentUser) return;
+
+    const staffViews = ['chat', 'media-library'];
+    const departmentAdminViews = [...staffViews, 'documents', 'users'];
+
+    const allowedViews = !isAdmin(currentUser)
+      ? staffViews
+      : isSuperAdmin(currentUser)
+        ? null
+        : departmentAdminViews;
+
+    if (allowedViews && !allowedViews.includes(activeView)) {
       setActiveView('chat');
     }
   }, [currentUser, activeView]);
@@ -1969,7 +1984,8 @@ export default function App() {
           />
         )}
 
-        {activeView === 'departments' && currentUser?.role === 'admin' && (
+        {/* Super Admin only: Departments */}
+        {activeView === 'departments' && isSuperAdmin(currentUser) && (
           <DepartmentsView
             departments={departments}
             documents={documents}
@@ -1981,7 +1997,7 @@ export default function App() {
           />
         )}
 
-        {/* 3. Admin-Only Users View */}
+        {/* 3. Admin Users View (Department Admins only see their own staff) */}
         {activeView === 'users' && currentUser?.role === 'admin' && (
           <UsersView
             users={usersList}
@@ -1994,8 +2010,8 @@ export default function App() {
           />
         )}
 
-        {/* 4. Admin-Only Security & Audit Logs View */}
-        {activeView === 'audit-logs' && currentUser?.role === 'admin' && (
+        {/* 4. Super Admin only: Security & Audit Logs View */}
+        {activeView === 'audit-logs' && isSuperAdmin(currentUser) && (
           <AuditLogsView />
         )}
       </main>
@@ -2021,6 +2037,7 @@ export default function App() {
         onToast={addToast}
         reuploadDoc={reuploadDoc}
         onReupload={handleReuploadDocument}
+        currentUser={currentUser}
       />
 
       <GoogleDriveModal
@@ -2032,6 +2049,7 @@ export default function App() {
           setDocuments(docsData.data || []);
         }}
         onToast={addToast}
+        currentUser={currentUser}
       />
 
       <DepartmentModal

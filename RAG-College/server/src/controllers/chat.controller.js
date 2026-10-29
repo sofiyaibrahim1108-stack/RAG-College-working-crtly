@@ -58,13 +58,11 @@ exports.sendMessage = async (req, res) => {
       ? new mongoose.Types.ObjectId(currentUserId)
       : null;
 
-    // LEVEL 2 SECURITY ENFORCEMENT: RBAC Department Intersection
+    // LEVEL 2 SECURITY ENFORCEMENT: RBAC Department Intersection & Super Admin check
     let allowedDepts = [];
-    let isUserAdmin = false;
+    let isSuperAdmin = false;
 
     if (req.user) {
-      isUserAdmin = req.user.role === 'admin';
-      
       const userDepts = [];
       if (req.user.departmentId) {
         userDepts.push(String(req.user.departmentId));
@@ -75,6 +73,9 @@ exports.sendMessage = async (req, res) => {
         });
       }
       allowedDepts = Array.from(new Set(userDepts));
+
+      // Super Admin: Admin role with NO assigned department restrictions
+      isSuperAdmin = req.user.role === 'admin' && allowedDepts.length === 0;
     }
 
     const requestedDepts = (Array.isArray(departmentIds) ? departmentIds : [departmentIds])
@@ -83,9 +84,11 @@ exports.sendMessage = async (req, res) => {
 
     let enforcedDepartments = [];
 
-    if (isUserAdmin) {
+    if (isSuperAdmin) {
+      // Super Admin can query any requested departments freely
       enforcedDepartments = requestedDepts;
     } else {
+      // Scoped Department Admins and regular Staff are strictly restricted to their allowed departments
       if (requestedDepts.length > 0) {
         enforcedDepartments = requestedDepts.filter((id) => allowedDepts.includes(id));
       } else {
@@ -296,8 +299,6 @@ exports.listConversations = async (req, res) => {
     const filter = {};
     const currentUserId = req.user ? (req.user._id || req.user.id) : null;
 
-    // Filter conversations strictly by userId for ALL users (including admins if you want isolated chats)
-    // Or if admins should see their own chats, remove the admin check:
     if (currentUserId) {
       const userObjId = mongoose.Types.ObjectId.isValid(currentUserId)
         ? new mongoose.Types.ObjectId(currentUserId)

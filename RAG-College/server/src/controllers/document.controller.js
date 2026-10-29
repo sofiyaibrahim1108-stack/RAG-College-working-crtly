@@ -17,22 +17,14 @@ const {
   getUserDepartmentIds,
   isAdmin,
   isSuperAdmin,
-  isScopedAdmin
+  isScopedAdmin,
+  getDocumentDepartmentIds,
+  canManageDocument
 } = require('../services/access.service');
 
 /* ------------------------------------------------------------------ */
 /* Document-specific access helpers                                    */
 /* ------------------------------------------------------------------ */
-
-function getDocumentDepartmentIds(doc) {
-  const source =
-    Array.isArray(doc.departmentIds) && doc.departmentIds.length > 0
-      ? doc.departmentIds
-      : doc.departmentId
-        ? [doc.departmentId]
-        : [];
-  return uniqueIds(source);
-}
 
 function canReadDocument(user, doc) {
   if (!user) return true; // keeps the previous behaviour when no user is attached
@@ -40,15 +32,6 @@ function canReadDocument(user, doc) {
   if (doc.isPublic) return true;
   const userDepts = getUserDepartmentIds(user);
   return getDocumentDepartmentIds(doc).some((id) => userDepts.includes(id));
-}
-
-// A scoped admin may manage a document only if ALL its departments are theirs.
-function canManageDocument(user, doc) {
-  if (!isAdmin(user)) return false;
-  if (isSuperAdmin(user)) return true;
-  const docDepts = getDocumentDepartmentIds(doc);
-  const userDepts = getUserDepartmentIds(user);
-  return docDepts.length > 0 && docDepts.every((id) => userDepts.includes(id));
 }
 
 function parseDepartmentIds(body) {

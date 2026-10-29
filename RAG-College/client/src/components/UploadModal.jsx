@@ -7,10 +7,12 @@ import {
   Globe,
   Lock,
   FileText,
-  Info
+  Info,
+  Building2
 } from 'lucide-react';
 import MultiSelectDropdown from './MultiSelectDropdown';
 import { getFriendlyErrorMessage } from '../utils/errorHandler';
+import { isDepartmentAdmin } from '../utils/access';
 
 export default function UploadModal({
   isOpen,
@@ -19,7 +21,8 @@ export default function UploadModal({
   onUploadSuccess,
   onToast,
   reuploadDoc = null,
-  onReupload
+  onReupload,
+  currentUser = null
 }) {
   const [stagedFiles, setStagedFiles] = useState([]);
   const [selectedDeptIds, setSelectedDeptIds] = useState([]);
@@ -40,6 +43,13 @@ export default function UploadModal({
   const DROPZONE_MIN_HEIGHT = '160px'; // change this to make the drop zone taller or shorter
 
   const supportedExtensions = ['.pdf', '.doc', '.docx', '.csv', '.xls', '.xlsx', '.txt', '.ppt', '.pptx'];
+
+  // Department Admins always upload privately into their own department(s).
+  const scoped = isDepartmentAdmin(currentUser);
+  // With exactly one department there is nothing to choose, so it is fixed.
+  const lockedDept = scoped && departments.length === 1 ? departments[0] : null;
+  const publicMode = !scoped && isPublic;
+  const effectiveDeptIds = lockedDept ? [String(lockedDept._id)] : selectedDeptIds;
 
   const handleClose = () => {
     if (isUploading) return;
@@ -113,7 +123,7 @@ export default function UploadModal({
   };
 
   const handleUploadSubmit = async () => {
-    if (!isPublic && selectedDeptIds.length === 0) {
+    if (!publicMode && effectiveDeptIds.length === 0) {
       setDeptError('Please assign at least 1 department.');
       deptDropdownRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       deptDropdownRef.current?.focus();
@@ -131,15 +141,15 @@ export default function UploadModal({
 
     try {
       if (isReupload) {
-        await onReupload(reuploadDoc, stagedFiles[0], selectedDeptIds);
+        await onReupload(reuploadDoc, stagedFiles[0], effectiveDeptIds);
         handleClose();
         return;
       }
 
       const formData = new FormData();
       stagedFiles.forEach((f) => formData.append('files', f));
-      formData.append('departmentIds', JSON.stringify(selectedDeptIds));
-      formData.append('isPublic', String(isPublic));
+      formData.append('departmentIds', JSON.stringify(effectiveDeptIds));
+      formData.append('isPublic', String(publicMode));
 
       await onUploadSuccess(formData);
       if (onToast) onToast('Documents uploaded successfully!', 'success');
@@ -153,7 +163,7 @@ export default function UploadModal({
 
   // ---- Derived UI state (display only) ----
   const hasFiles = stagedFiles.length > 0;
-  const needsDepartment = !isPublic && selectedDeptIds.length === 0;
+  const needsDepartment = !publicMode && effectiveDeptIds.length === 0;
   const uploadDisabled = isUploading || !hasFiles;
 
   let footerHint = '';
@@ -256,62 +266,103 @@ export default function UploadModal({
               gap: '12px'
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                {isPublic ? <Globe size={17} color="#15803D" /> : <Lock size={17} color="#334155" />}
+                {publicMode ? <Globe size={17} color="#15803D" /> : <Lock size={17} color="#334155" />}
                 <span style={{ fontSize: '13.5px', fontWeight: 600, color: '#1E293B' }}>
-                  {isPublic ? 'Public (All Departments)' : 'Department Private Access'}
+                  {publicMode ? 'Public (All Departments)' : 'Department Private Access'}
                 </span>
               </div>
 
-              <div style={{ display: 'flex', background: '#E2E8F0', padding: '3px', borderRadius: '9px', gap: '2px' }}>
-                <button
-                  type="button"
-                  aria-pressed={!isPublic}
-                  onClick={() => { setIsPublic(false); setDeptError(''); }}
-                  style={{
-                    border: 'none',
-                    padding: '6px 14px',
-                    minHeight: '32px',
-                    borderRadius: '7px',
-                    fontSize: '12.5px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    background: !isPublic ? '#FFFFFF' : 'transparent',
-                    color: !isPublic ? '#0F172A' : '#475569',
-                    boxShadow: !isPublic ? '0 1px 3px rgba(0,0,0,0.12)' : 'none'
-                  }}
-                >
-                  Private
-                </button>
-                <button
-                  type="button"
-                  aria-pressed={isPublic}
-                  onClick={() => { setIsPublic(true); setSelectedDeptIds([]); setDeptError(''); }}
-                  style={{
-                    border: 'none',
-                    padding: '6px 14px',
-                    minHeight: '32px',
-                    borderRadius: '7px',
-                    fontSize: '12.5px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    background: isPublic ? '#15803D' : 'transparent',
-                    color: isPublic ? '#FFFFFF' : '#475569',
-                    boxShadow: isPublic ? '0 1px 3px rgba(0,0,0,0.12)' : 'none'
-                  }}
-                >
-                  Public
-                </button>
-              </div>
+              {/* Only a Super Admin can publish documents to everyone */}
+              {!scoped && (
+                <div style={{ display: 'flex', background: '#E2E8F0', padding: '3px', borderRadius: '9px', gap: '2px' }}>
+                  <button
+                    type="button"
+                    aria-pressed={!isPublic}
+                    onClick={() => { setIsPublic(false); setDeptError(''); }}
+                    style={{
+                      border: 'none',
+                      padding: '6px 14px',
+                      minHeight: '32px',
+                      borderRadius: '7px',
+                      fontSize: '12.5px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      background: !isPublic ? '#FFFFFF' : 'transparent',
+                      color: !isPublic ? '#0F172A' : '#475569',
+                      boxShadow: !isPublic ? '0 1px 3px rgba(0,0,0,0.12)' : 'none'
+                    }}
+                  >
+                    Private
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={isPublic}
+                    onClick={() => { setIsPublic(true); setSelectedDeptIds([]); setDeptError(''); }}
+                    style={{
+                      border: 'none',
+                      padding: '6px 14px',
+                      minHeight: '32px',
+                      borderRadius: '7px',
+                      fontSize: '12.5px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      background: isPublic ? '#15803D' : 'transparent',
+                      color: isPublic ? '#FFFFFF' : '#475569',
+                      boxShadow: isPublic ? '0 1px 3px rgba(0,0,0,0.12)' : 'none'
+                    }}
+                  >
+                    Public
+                  </button>
+                </div>
+              )}
             </div>
             <p style={{ fontSize: '12.5px', color: '#475569', margin: '8px 2px 0', lineHeight: 1.4 }}>
-              {isPublic
+              {publicMode
                 ? 'Everyone in every department can view and search these files.'
-                : 'Only the selected departments can view and search these files.'}
+                : scoped
+                  ? 'Only people in your department can view and search these files.'
+                  : 'Only the selected departments can view and search these files.'}
             </p>
           </div>
 
-          {/* Department Select if Private */}
-          {!isPublic && (
+          {/* Department: fixed label for a single-department admin, dropdown otherwise */}
+          {!publicMode && lockedDept && (
+            <div style={{ marginBottom: '18px' }}>
+              <div style={{ fontSize: '13px', fontWeight: 600, color: '#334155', marginBottom: '6px' }}>
+                Uploading to department
+              </div>
+              <div style={{
+                minHeight: '42px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                padding: '0 14px',
+                borderRadius: '10px',
+                background: '#F8FAFC',
+                border: '1px solid #E2E8F0',
+                fontSize: '14px',
+                fontWeight: 600,
+                color: '#0F172A'
+              }}>
+                <Building2 size={16} color="#1D4ED8" />
+                <span>{lockedDept.name}</span>
+                {lockedDept.code && (
+                  <span style={{
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    color: '#1D4ED8',
+                    background: '#EFF6FF',
+                    padding: '2px 8px',
+                    borderRadius: '6px'
+                  }}>
+                    {lockedDept.code}
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {!publicMode && !lockedDept && (
             <div style={{ marginBottom: '18px' }}>
               <MultiSelectDropdown
                 ref={deptDropdownRef}

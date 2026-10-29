@@ -310,6 +310,28 @@ select.um-input { cursor: pointer; text-overflow: ellipsis; }
 .um-act.danger:hover { background: #fef2f2; color: #dc2626; }
 .um-act:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(37, 99, 235, .18); }
 
+/* ---------- Page scrolling ----------
+   Cards keep their natural height so the page scrolls (instead of the table being squeezed
+   and clipped), with a slim scrollbar that only shows while the pointer is over the page. */
+.page-container.um-page > * { flex-shrink: 0; }
+.page-container.um-page::-webkit-scrollbar { width: 10px; height: 10px; }
+.page-container.um-page::-webkit-scrollbar-track { background: transparent; }
+.page-container.um-page::-webkit-scrollbar-thumb {
+  background-color: transparent; border-radius: 999px;
+  border: 3px solid transparent; background-clip: padding-box;
+  transition: background-color .2s ease;
+}
+.page-container.um-page:hover::-webkit-scrollbar-thumb,
+.page-container.um-page:focus-within::-webkit-scrollbar-thumb { background-color: rgba(100, 116, 139, .45); }
+.page-container.um-page::-webkit-scrollbar-thumb:hover { background-color: rgba(100, 116, 139, .75); }
+[data-theme="dark"] .page-container.um-page:hover::-webkit-scrollbar-thumb,
+[data-theme="dark"] .page-container.um-page:focus-within::-webkit-scrollbar-thumb { background-color: rgba(148, 163, 184, .4); }
+[data-theme="dark"] .page-container.um-page::-webkit-scrollbar-thumb:hover { background-color: rgba(148, 163, 184, .7); }
+@supports not selector(::-webkit-scrollbar) {
+  .page-container.um-page { scrollbar-width: thin; scrollbar-color: transparent transparent; }
+  .page-container.um-page:hover, .page-container.um-page:focus-within { scrollbar-color: rgba(100, 116, 139, .5) transparent; }
+}
+
 `;
 
 // Lightweight pure-JS CSV Parser supporting quoted commas and newlines
@@ -847,7 +869,7 @@ export default function UsersView({
   const busy = isSubmitting || isImporting;
 
   return (
-    <div className="page-container">
+    <div className="page-container um-page">
       <style>{MODAL_CSS}</style>
 
       {/* ── Page Header ── */}

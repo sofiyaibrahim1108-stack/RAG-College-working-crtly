@@ -100,6 +100,28 @@ export default function DepartmentsView({
   return (
     <div className="page-container dv-wrap">
       <style>{`
+        /* ---------- Page scrolling ----------
+           Cards keep their natural height so the page scrolls (instead of the table being squeezed
+           and clipped), with a slim scrollbar that only shows while the pointer is over the page. */
+        .page-container.dv-wrap > * { flex-shrink: 0; }
+        .page-container.dv-wrap::-webkit-scrollbar { width: 10px; height: 10px; }
+        .page-container.dv-wrap::-webkit-scrollbar-track { background: transparent; }
+        .page-container.dv-wrap::-webkit-scrollbar-thumb {
+          background-color: transparent; border-radius: 999px;
+          border: 3px solid transparent; background-clip: padding-box;
+          transition: background-color .2s ease;
+        }
+        .page-container.dv-wrap:hover::-webkit-scrollbar-thumb,
+        .page-container.dv-wrap:focus-within::-webkit-scrollbar-thumb { background-color: rgba(100, 116, 139, .45); }
+        .page-container.dv-wrap::-webkit-scrollbar-thumb:hover { background-color: rgba(100, 116, 139, .75); }
+        [data-theme="dark"] .page-container.dv-wrap:hover::-webkit-scrollbar-thumb,
+        [data-theme="dark"] .page-container.dv-wrap:focus-within::-webkit-scrollbar-thumb { background-color: rgba(148, 163, 184, .4); }
+        [data-theme="dark"] .page-container.dv-wrap::-webkit-scrollbar-thumb:hover { background-color: rgba(148, 163, 184, .7); }
+        @supports not selector(::-webkit-scrollbar) {
+          .page-container.dv-wrap { scrollbar-width: thin; scrollbar-color: transparent transparent; }
+          .page-container.dv-wrap:hover, .page-container.dv-wrap:focus-within { scrollbar-color: rgba(100, 116, 139, .5) transparent; }
+        }
+
         .dv-toolbar {
           display: flex; align-items: center; justify-content: space-between;
           gap: 16px; flex-wrap: wrap; margin-bottom: 20px;

@@ -10,7 +10,8 @@ import {
   Lock,
   Check,
   MoreHorizontal,
-  LogOut
+  LogOut,
+  Building2
 } from 'lucide-react';
 import {
   fetchDriveStatus,
@@ -22,6 +23,7 @@ import {
 import { GoogleDriveIcon } from './Icons';
 import MultiSelectDropdown from './MultiSelectDropdown';
 import { getFriendlyErrorMessage } from '../utils/errorHandler';
+import { isDepartmentAdmin } from '../utils/access';
 
 // Layout settings (change here, not inside the JSX)
 const MODAL_CONFIG = {
@@ -59,7 +61,8 @@ export default function GoogleDriveModal({
   onClose,
   departments = [],
   onImportSuccess,
-  onToast
+  onToast,
+  currentUser = null
 }) {
   const [authStatus, setAuthStatus] = useState({ configured: false, authenticated: false });
   const [isLoadingStatus, setIsLoadingStatus] = useState(true);
@@ -81,6 +84,15 @@ export default function GoogleDriveModal({
   const deptDropdownRef = useRef(null);
   const latestRequestRef = useRef(0);
   const lastSearchedRef = useRef('');
+
+  // Department Admins always import privately into their own department(s).
+  const scoped = isDepartmentAdmin(currentUser);
+  // With exactly one department there is nothing to choose, so it is fixed.
+  const lockedDept = scoped && departments.length === 1 ? departments[0] : null;
+  const publicMode = !scoped && isPublic;
+  const effectiveDeptIds = lockedDept ? [String(lockedDept._id)] : selectedDeptIds;
+  // Only a Super Admin may connect or disconnect the shared Google account.
+  const canManageConnection = authStatus.canManageConnection !== false && !scoped;
 
   // Live search: run automatically shortly after the user stops typing
   useEffect(() => {
@@ -223,7 +235,7 @@ export default function GoogleDriveModal({
 
   // Batch import handler
   const handleBatchImport = async () => {
-    if (!isPublic && selectedDeptIds.length === 0) {
+    if (!publicMode && effectiveDeptIds.length === 0) {
       setDeptError('Please assign at least 1 department');
       deptDropdownRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       deptDropdownRef.current?.focus();
@@ -251,8 +263,8 @@ export default function GoogleDriveModal({
         try {
           const res = await importDriveFile({
             fileId: currentFile.id,
-            departmentIds: selectedDeptIds,
-            isPublic: isPublic,
+            departmentIds: effectiveDeptIds,
+            isPublic: publicMode,
             forceReimport: false
           });
 
@@ -324,7 +336,7 @@ export default function GoogleDriveModal({
   // Display-only hint that explains why Import is not ready yet
   let footerHint = '';
   if (selectedFiles.length === 0) footerHint = 'Select at least one file to import';
-  else if (!isPublic && selectedDeptIds.length === 0) footerHint = 'Select a department before importing';
+  else if (!publicMode && effectiveDeptIds.length === 0) footerHint = 'Select a department before importing';
 
   const trimmedQuery = searchQuery.trim();
 
@@ -428,7 +440,7 @@ export default function GoogleDriveModal({
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-            {authStatus.authenticated && (
+            {authStatus.authenticated && canManageConnection && (
               <div style={{ position: 'relative' }}>
                 <button
                   type="button"
@@ -618,33 +630,46 @@ export default function GoogleDriveModal({
               }}>
                 <GoogleDriveIcon size={28} />
               </div>
-              <h3 style={{ fontSize: '16px', fontWeight: 700, color: C.text, margin: '0 0 6px' }}>
-                Connect your account
-              </h3>
-              <p style={{ fontSize: '14px', color: C.muted, maxWidth: '360px', margin: '0 auto 18px', lineHeight: 1.5 }}>
-                Link your Google Drive securely to browse and import your college documents.
-              </p>
-              <button
-                type="button"
-                onClick={handleConnect}
-                style={{
-                  background: C.primary,
-                  color: '#FFFFFF',
-                  minHeight: '42px',
-                  padding: '0 20px',
-                  borderRadius: R.control,
-                  border: 'none',
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '8px'
-                }}
-              >
-                <span>Authorize Google Drive</span>
-                <ExternalLink size={14} />
-              </button>
+              {canManageConnection ? (
+                <>
+                  <h3 style={{ fontSize: '16px', fontWeight: 700, color: C.text, margin: '0 0 6px' }}>
+                    Connect your account
+                  </h3>
+                  <p style={{ fontSize: '14px', color: C.muted, maxWidth: '360px', margin: '0 auto 18px', lineHeight: 1.5 }}>
+                    Link your Google Drive securely to browse and import your college documents.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleConnect}
+                    style={{
+                      background: C.primary,
+                      color: '#FFFFFF',
+                      minHeight: '42px',
+                      padding: '0 20px',
+                      borderRadius: R.control,
+                      border: 'none',
+                      fontSize: '14px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '8px'
+                    }}
+                  >
+                    <span>Authorize Google Drive</span>
+                    <ExternalLink size={14} />
+                  </button>
+                </>
+              ) : (
+                <>
+                  <h3 style={{ fontSize: '16px', fontWeight: 700, color: C.text, margin: '0 0 6px' }}>
+                    Google Drive is not connected
+                  </h3>
+                  <p style={{ fontSize: '14px', color: C.muted, maxWidth: '360px', margin: '0 auto', lineHeight: 1.5 }}>
+                    Ask a Super Admin to connect Google Drive. Once it is connected, you can import files into your department.
+                  </p>
+                </>
+              )}
             </div>
           ) : (
             <>
@@ -658,22 +683,7 @@ export default function GoogleDriveModal({
               }}>
                 <div style={{ display: 'flex', alignItems: 'flex-end', gap: '14px' }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    {!isPublic ? (
-                      <MultiSelectDropdown
-                        ref={deptDropdownRef}
-                        label="Add to departments"
-                        required={true}
-                        options={departments}
-                        selectedIds={selectedDeptIds}
-                        onChange={(newIds) => {
-                          setSelectedDeptIds(newIds);
-                          if (newIds.length > 0) setDeptError('');
-                        }}
-                        error={deptError}
-                        placeholder="Select 1 or more departments..."
-                        id="gdrive-dept-select"
-                      />
-                    ) : (
+                    {publicMode ? (
                       <div>
                         <div style={{ fontSize: '13px', fontWeight: 600, color: C.textSoft, marginBottom: '6px' }}>
                           Add to departments
@@ -694,48 +704,105 @@ export default function GoogleDriveModal({
                           <span>All departments can see these files</span>
                         </div>
                       </div>
+                    ) : lockedDept ? (
+                      <div>
+                        <div style={{ fontSize: '13px', fontWeight: 600, color: C.textSoft, marginBottom: '6px' }}>
+                          Importing to department
+                        </div>
+                        <div style={{
+                          height: '42px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '10px',
+                          padding: '0 14px',
+                          borderRadius: R.control,
+                          background: '#FFFFFF',
+                          border: `1px solid ${C.border}`,
+                          fontSize: '14px',
+                          fontWeight: 600,
+                          color: C.text
+                        }}>
+                          <Building2 size={16} color={C.primary} />
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {lockedDept.name}
+                          </span>
+                          {lockedDept.code && (
+                            <span style={{
+                              fontSize: '12px',
+                              fontWeight: 700,
+                              color: C.primary,
+                              background: C.primarySoft,
+                              padding: '2px 8px',
+                              borderRadius: R.chip,
+                              flexShrink: 0
+                            }}>
+                              {lockedDept.code}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <MultiSelectDropdown
+                        ref={deptDropdownRef}
+                        label="Add to departments"
+                        required={true}
+                        options={departments}
+                        selectedIds={selectedDeptIds}
+                        onChange={(newIds) => {
+                          setSelectedDeptIds(newIds);
+                          if (newIds.length > 0) setDeptError('');
+                        }}
+                        error={deptError}
+                        placeholder="Select 1 or more departments..."
+                        id="gdrive-dept-select"
+                      />
                     )}
                   </div>
 
-                  <div style={{ flexShrink: 0 }}>
-                    <div style={{ fontSize: '13px', fontWeight: 600, color: C.textSoft, marginBottom: '6px' }}>
-                      Who can see
+                  {/* Only a Super Admin can publish documents to everyone */}
+                  {!scoped && (
+                    <div style={{ flexShrink: 0 }}>
+                      <div style={{ fontSize: '13px', fontWeight: 600, color: C.textSoft, marginBottom: '6px' }}>
+                        Who can see
+                      </div>
+                      <div style={{
+                        display: 'flex',
+                        background: C.border,
+                        padding: '3px',
+                        borderRadius: R.control,
+                        gap: '2px'
+                      }}>
+                        <button
+                          type="button"
+                          onClick={() => handleScopeChange(false)}
+                          disabled={isImporting}
+                          aria-pressed={!isPublic}
+                          style={segmentStyle(!isPublic)}
+                        >
+                          <Lock size={13} />
+                          Private
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleScopeChange(true)}
+                          disabled={isImporting}
+                          aria-pressed={isPublic}
+                          style={segmentStyle(isPublic)}
+                        >
+                          <Globe size={13} />
+                          Public
+                        </button>
+                      </div>
                     </div>
-                    <div style={{
-                      display: 'flex',
-                      background: C.border,
-                      padding: '3px',
-                      borderRadius: R.control,
-                      gap: '2px'
-                    }}>
-                      <button
-                        type="button"
-                        onClick={() => handleScopeChange(false)}
-                        disabled={isImporting}
-                        aria-pressed={!isPublic}
-                        style={segmentStyle(!isPublic)}
-                      >
-                        <Lock size={13} />
-                        Private
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleScopeChange(true)}
-                        disabled={isImporting}
-                        aria-pressed={isPublic}
-                        style={segmentStyle(isPublic)}
-                      >
-                        <Globe size={13} />
-                        Public
-                      </button>
-                    </div>
-                  </div>
+                  )}
                 </div>
 
                 <p style={{ fontSize: '12.5px', color: C.muted, margin: '10px 2px 0', lineHeight: 1.4 }}>
-                  {isPublic
+                  {publicMode
                     ? 'Everyone in every department can view and search these files.'
-                    : 'Only the selected departments can view and search these files.'}
+                    : scoped
+                      ? 'Only people in your department can view and search these files.'
+                      : 'Only the selected departments can view and search these files.'}
                 </p>
               </div>
 
