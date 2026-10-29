@@ -173,6 +173,46 @@ select.um-input { cursor: pointer; text-overflow: ellipsis; }
 .um-trailing:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--um-ring); }
 .um-chevron { position: absolute; right: 13px; color: var(--um-placeholder); pointer-events: none; }
 
+/* ---------- Multi department checklist ---------- */
+.um-dept-list {
+  display: flex; flex-direction: column; gap: 2px;
+  max-height: 150px; overflow-y: auto; padding: 6px;
+  border: 1px solid var(--um-border-strong); border-radius: 10px; background: #fff;
+}
+.um-dept-item {
+  display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 8px;
+  font-size: 13.5px; color: var(--um-text); cursor: pointer;
+}
+.um-dept-item:hover { background: #f1f5f9; }
+.um-dept-item input { width: 15px; height: 15px; accent-color: var(--um-primary); cursor: pointer; }
+.um-dept-empty { padding: 8px; font-size: 13px; color: var(--um-muted); }
+
+.um-dd-trigger {
+  width: 100%; min-height: 42px; padding: 6px 40px 6px 38px; position: relative;
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px; text-align: left;
+  border: 1px solid var(--um-border-strong); border-radius: 10px; background: #fff;
+  color: var(--um-text); font-size: 14px; cursor: pointer;
+  transition: border-color .12s, box-shadow .12s;
+}
+.um-dd-trigger:hover:not(:disabled) { border-color: #b8c4d4; }
+.um-dd-trigger.open, .um-dd-trigger:focus-visible { outline: none; border-color: var(--um-primary); box-shadow: 0 0 0 3px var(--um-ring); }
+.um-dd-trigger:disabled { background: var(--um-subtle); cursor: not-allowed; }
+.um-dd-icon { position: absolute; left: 13px; top: 13px; color: var(--um-placeholder); pointer-events: none; }
+.um-dd-caret { position: absolute; right: 13px; top: 13px; color: var(--um-placeholder); pointer-events: none; transition: transform .15s; }
+.um-dd-trigger.open .um-dd-caret { transform: rotate(180deg); }
+.um-dd-placeholder { color: var(--um-placeholder); padding: 4px 0; }
+.um-chip {
+  display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 999px;
+  background: #eff6ff; color: var(--um-primary-hover); font-size: 12.5px; font-weight: 500;
+  box-shadow: inset 0 0 0 1px #dbeafe;
+}
+.um-dd-panel {
+  display: flex; flex-direction: column; gap: 2px; padding: 6px;
+  max-height: 200px; overflow-y: auto;
+  border: 1px solid var(--um-border-strong); border-radius: 10px; background: #fff;
+  box-shadow: 0 6px 18px -6px rgba(15, 23, 42, .18);
+}
+
 /* ---------- Footer ---------- */
 .um-footer {
   display: flex; justify-content: flex-end; align-items: center; gap: 10px;
@@ -550,17 +590,27 @@ async function parseXLSX(arrayBuffer) {
 
 // `scoped` = the signed-in user is a Department Admin:
 //   - every imported user is a Staff account
-//   - the department must be one of the departments passed in (already limited by the backend)
+//   - departments must be among the departments passed in (already limited by the backend)
+// The Department column can hold several departments separated by ";" or "|" (e.g. CSE;ECE).
 function processParsedRows(rawRows, departments, options = {}) {
   const scoped = !!options.scoped;
   const validUsers = [];
   const errors = [];
 
+  const findDepartment = (token) =>
+    (departments || []).find(
+      (d) =>
+        (d._id && d._id.toLowerCase() === token) ||
+        (d.name && d.name.toLowerCase() === token) ||
+        (d.code && d.code.toLowerCase() === token) ||
+        (d.name && d.name.toLowerCase().includes(token))
+    );
+
   rawRows.forEach((row, index) => {
     const rowNum = index + 2;
-    const name = (row.name || row.fullname || row.username || row['fullname'] || '').trim();
-    const email = (row.email || row.collegeemail || row.mail || row['collegeemail'] || '').trim().toLowerCase();
-    let password = (row.password || row.initialpassword || row.pass || row['initialpassword'] || '').trim();
+    const name = (row.name || row.fullname || row.username || '').trim();
+    const email = (row.email || row.collegeemail || row.mail || '').trim().toLowerCase();
+    let password = (row.password || row.initialpassword || row.pass || '').trim();
     let role = (row.role || row.userrole || '').trim().toLowerCase();
     role = scoped ? 'user' : role === 'admin' ? 'admin' : 'user';
 
@@ -572,7 +622,7 @@ function processParsedRows(rawRows, departments, options = {}) {
     }
 
     if (!email || !email.includes('@')) {
-      errors.push(`Row ${rowNum} (${name || 'Unnamed'}): Valid email is required.`);
+      errors.push(`Row ${rowNum} (${name}): Valid email is required.`);
       return;
     }
 
@@ -582,31 +632,30 @@ function processParsedRows(rawRows, departments, options = {}) {
       password = password.padEnd(6, '0');
     }
 
-    const deptStr = (row.department || row.dept || row.departmentid || '').trim().toLowerCase();
-    let departmentId = '';
-    let departmentDisplay = 'All / General';
+    const deptRaw = (row.departments || row.department || row.dept || row.departmentid || '').trim();
+    const tokens = deptRaw
+      .split(/[;|]/)
+      .map((t) => t.trim().toLowerCase())
+      .filter(Boolean);
 
-    if (deptStr && departments && departments.length > 0) {
-      const match = departments.find(
-        (d) =>
-          (d._id && d._id.toLowerCase() === deptStr) ||
-          (d.name && d.name.toLowerCase() === deptStr) ||
-          (d.code && d.code.toLowerCase() === deptStr) ||
-          (d.name && d.name.toLowerCase().includes(deptStr))
+    const matched = [];
+    const unmatched = [];
+    tokens.forEach((token) => {
+      const match = findDepartment(token);
+      if (!match) unmatched.push(token);
+      else if (!matched.some((m) => m._id === match._id)) matched.push(match);
+    });
+
+    if (unmatched.length > 0) {
+      errors.push(
+        `Row ${rowNum} (${name}): ${scoped ? 'not your department' : 'unknown department'}: ${unmatched.join(', ')}`
       );
-      if (match) {
-        departmentId = match._id;
-        departmentDisplay = `${match.name} (${match.code})`;
-      } else if (scoped) {
-        errors.push(`Row ${rowNum} (${name}): "${row.department || row.dept}" is not one of your departments.`);
-        return;
-      } else {
-        departmentDisplay = row.department || row.dept || 'Unknown';
-      }
-    } else if (scoped) {
+      return;
+    }
+
+    if (scoped && matched.length === 0) {
       if (departments && departments.length === 1) {
-        departmentId = departments[0]._id;
-        departmentDisplay = `${departments[0].name} (${departments[0].code})`;
+        matched.push(departments[0]);
       } else {
         errors.push(`Row ${rowNum} (${name}): Department is required.`);
         return;
@@ -618,8 +667,10 @@ function processParsedRows(rawRows, departments, options = {}) {
       email,
       password,
       role,
-      departmentId,
-      departmentDisplay,
+      departmentIds: matched.map((d) => d._id),
+      departmentDisplay: matched.length
+        ? matched.map((d) => `${d.name} (${d.code})`).join(', ')
+        : 'All / General',
       rowNum
     });
   });
@@ -650,6 +701,12 @@ function getAvatarColor(name) {
   return colors[Math.abs(hash) % colors.length];
 }
 
+// All departments of a user (new `departmentIds` array, falling back to legacy `departmentId`).
+function getUserDepartments(u) {
+  const list = u.departmentIds && u.departmentIds.length ? u.departmentIds : u.departmentId ? [u.departmentId] : [];
+  return list.filter((d) => d && d.name);
+}
+
 export default function UsersView({
   users = [],
   departments = [],
@@ -675,8 +732,10 @@ export default function UsersView({
     email: '',
     password: '',
     role: 'user',
-    departmentId: ''
+    departmentIds: []
   });
+  const [formError, setFormError] = useState('');
+  const [deptOpen, setDeptOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
@@ -693,7 +752,9 @@ export default function UsersView({
 
   const handleCloseModal = () => {
     setShowAddModal(false);
-    setFormData({ name: '', email: '', password: '', role: 'user', departmentId: '' });
+    setFormData({ name: '', email: '', password: '', role: 'user', departmentIds: [] });
+    setFormError('');
+    setDeptOpen(false);
     setShowPassword(false);
     setSelectedFile(null);
     setParsedUsers([]);
@@ -701,6 +762,23 @@ export default function UsersView({
     setBulkError('');
     setImportStatus(null);
     setModalTab('single');
+  };
+
+  // Departments currently ticked in the form (falls back to the single default department).
+  const effectiveDeptIds = formData.departmentIds.length
+    ? formData.departmentIds
+    : defaultDeptId
+      ? [defaultDeptId]
+      : [];
+
+  const toggleDepartment = (deptId) => {
+    setFormData((prev) => {
+      const base = prev.departmentIds.length ? prev.departmentIds : defaultDeptId ? [defaultDeptId] : [];
+      return {
+        ...prev,
+        departmentIds: base.includes(deptId) ? base.filter((x) => x !== deptId) : [...base, deptId]
+      };
+    });
   };
 
   // Close modal with Escape key
@@ -727,12 +805,21 @@ export default function UsersView({
 
   const handleSingleSubmit = async (e) => {
     e.preventDefault();
+
+    if (scoped && effectiveDeptIds.length === 0) {
+      setFormError('Select at least one department.');
+      return;
+    }
+
+    setFormError('');
     setIsSubmitting(true);
     try {
       await onCreateUser({
-        ...formData,
+        name: formData.name,
+        email: formData.email,
+        password: formData.password,
         role: scoped ? 'user' : formData.role,
-        departmentId: formData.departmentId || defaultDeptId
+        departmentIds: effectiveDeptIds
       });
       handleCloseModal();
     } catch {
@@ -793,12 +880,14 @@ export default function UsersView({
   };
 
   const handleDownloadTemplate = () => {
-    // Sample rows use a real department from the list this user can access.
+    // Sample rows use real departments from the list this user can access.
     const sampleDept = departments[0]?.name || 'Department name';
+    const sampleMulti =
+      departments.length > 1 ? `${departments[0].name};${departments[1].name}` : sampleDept;
     let csvContent =
       'Name,Email,Password,Role,Department\n' +
       `Prof. Alex Johnson,alex.johnson@college.edu,Welcome@2025,user,${sampleDept}\n` +
-      `Prof. Alan Turing,alan.turing@college.edu,Welcome@2025,user,${sampleDept}\n`;
+      `Prof. Alan Turing,alan.turing@college.edu,Welcome@2025,user,"${sampleMulti}"\n`;
 
     if (!scoped) {
       csvContent += `Dr. Maria Garcia,maria.garcia@college.edu,Welcome@2025,admin,${sampleDept}\n`;
@@ -844,7 +933,7 @@ export default function UsersView({
           email: u.email,
           password: u.password,
           role: u.role,
-          departmentId: u.departmentId || ''
+          departmentIds: u.departmentIds || []
         });
         successCount++;
       } catch (err) {
@@ -994,6 +1083,7 @@ export default function UsersView({
                   const isCurrent = currentUser?.id === u._id;
                   const isActive = (u.status || 'active') === 'active';
                   const isLast = idx === filteredUsers.length - 1;
+                  const userDepts = getUserDepartments(u);
 
                   return (
                     <tr
@@ -1038,13 +1128,27 @@ export default function UsersView({
                         </span>
                       </td>
 
-                      {/* Department */}
+                      {/* Department(s) */}
                       <td style={{ padding: '13px 16px', fontSize: '13px', color: 'var(--text-secondary)' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                          <Building2 size={12} style={{ opacity: 0.55, flexShrink: 0 }} />
-                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {u.departmentId ? `${u.departmentId.name} (${u.departmentId.code})` : 'All / General'}
-                          </span>
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
+                          <Building2 size={12} style={{ opacity: 0.55, flexShrink: 0, marginTop: '4px' }} />
+                          {userDepts.length ? (
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', maxWidth: '300px' }}>
+                              {userDepts.map((d) => (
+                                <span
+                                  key={d._id}
+                                  style={{
+                                    padding: '2px 8px', borderRadius: '999px', fontSize: '12px', fontWeight: 500,
+                                    background: 'rgba(37, 99, 235, 0.10)', color: '#2563eb', whiteSpace: 'nowrap'
+                                  }}
+                                >
+                                  {d.name} ({d.code})
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span>All / General</span>
+                          )}
                         </div>
                       </td>
 
@@ -1113,7 +1217,7 @@ export default function UsersView({
                 <h2 className="um-title" id="um-title">Add college user</h2>
                 <p className="um-subtitle">
                   {modalTab === 'single'
-                    ? 'Create an account with a department and role.'
+                    ? 'Create an account with departments and role.'
                     : 'Upload a spreadsheet to import multiple accounts at once.'}
                 </p>
               </div>
@@ -1223,7 +1327,7 @@ export default function UsersView({
                     </div>
                   </div>
 
-                  <div className="um-grid-2">
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                     <div className="um-field">
                       <label className="um-label" htmlFor="um-role">Role</label>
                       <div className="um-input-wrap">
@@ -1243,34 +1347,61 @@ export default function UsersView({
                     </div>
 
                     <div className="um-field">
-                      <label className="um-label" htmlFor="um-dept">
-                        Department{scoped && <span className="req">*</span>}
+                      <label className="um-label">
+                        Departments{scoped && <span className="req">*</span>}
+                        {effectiveDeptIds.length > 0 && (
+                          <span className="opt">{effectiveDeptIds.length} selected</span>
+                        )}
                       </label>
-                      <div className="um-input-wrap">
-                        <Building2 size={16} className="um-icon" />
-                        <select
-                          id="um-dept"
-                          className="um-input pr"
-                          value={formData.departmentId || defaultDeptId}
-                          onChange={(e) => setFormData({ ...formData, departmentId: e.target.value })}
-                          required={scoped}
-                          disabled={isSubmitting}
-                        >
-                          {scoped ? (
-                            <option value="" disabled>Select department</option>
-                          ) : (
-                            <option value="">All / General</option>
+                      <button
+                        type="button"
+                        className={`um-dd-trigger${deptOpen ? ' open' : ''}`}
+                        onClick={() => setDeptOpen((o) => !o)}
+                        aria-expanded={deptOpen}
+                        disabled={isSubmitting}
+                      >
+                        <Building2 size={16} className="um-dd-icon" />
+                        {effectiveDeptIds.length === 0 ? (
+                          <span className="um-dd-placeholder">
+                            {scoped ? 'Select departments' : 'All / General'}
+                          </span>
+                        ) : (
+                          departments
+                            .filter((d) => effectiveDeptIds.includes(d._id))
+                            .map((d) => (
+                              <span key={d._id} className="um-chip">{d.name} ({d.code})</span>
+                            ))
+                        )}
+                        <ChevronDown size={16} className="um-dd-caret" />
+                      </button>
+                      {deptOpen && (
+                        <div className="um-dd-panel">
+                          {departments.length === 0 && (
+                            <div className="um-dept-empty">No departments available.</div>
                           )}
                           {departments.map((d) => (
-                            <option key={d._id} value={d._id}>
-                              {d.name} ({d.code})
-                            </option>
+                            <label key={d._id} className="um-dept-item">
+                              <input
+                                type="checkbox"
+                                checked={effectiveDeptIds.includes(d._id)}
+                                onChange={() => toggleDepartment(d._id)}
+                                disabled={isSubmitting}
+                              />
+                              <span>{d.name} ({d.code})</span>
+                            </label>
                           ))}
-                        </select>
-                        <ChevronDown size={16} className="um-chevron" />
-                      </div>
+                        </div>
+                      )}
+                      {!scoped && <p className="um-help">Edhuvum select pannala-na "All / General".</p>}
                     </div>
                   </div>
+
+                  {formError && (
+                    <div className="um-alert error">
+                      <AlertCircle size={15} />
+                      <span>{formError}</span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="um-footer">
@@ -1307,8 +1438,9 @@ export default function UsersView({
                       <span>
                         Required columns: <strong>Name, Email</strong>.{' '}
                         {scoped
-                          ? 'Optional: Password, Department. Everyone is added as staff in one of your departments.'
-                          : 'Optional: Password, Role, Department.'}
+                          ? 'Optional: Password, Department. Everyone is added as staff in your departments.'
+                          : 'Optional: Password, Role, Department.'}{' '}
+                        Multiple departments: separate with <strong>;</strong> (e.g. CSE;ECE).
                       </span>
                     </div>
                     <button type="button" className="um-btn um-btn-ghost um-btn-sm" onClick={handleDownloadTemplate}>

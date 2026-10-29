@@ -23,7 +23,7 @@ import {
 import { GoogleDriveIcon } from './Icons';
 import MultiSelectDropdown from './MultiSelectDropdown';
 import { getFriendlyErrorMessage } from '../utils/errorHandler';
-import { isDepartmentAdmin } from '../utils/access';
+import { isDepartmentAdmin, getUserDepartmentIds } from '../utils/access';
 
 // Layout settings (change here, not inside the JSX)
 const MODAL_CONFIG = {
@@ -85,11 +85,13 @@ export default function GoogleDriveModal({
   const latestRequestRef = useRef(0);
   const lastSearchedRef = useRef('');
 
-  // Department Admins always import privately into their own department(s).
+  // Department Admins import into their own department(s).
   const scoped = isDepartmentAdmin(currentUser);
   // With exactly one department there is nothing to choose, so it is fixed.
   const lockedDept = scoped && departments.length === 1 ? departments[0] : null;
-  const publicMode = !scoped && isPublic;
+  // Super Admin, or a Department Admin with more than 1 department, can publish to everyone.
+  const canPublish = !scoped || getUserDepartmentIds(currentUser).length > 1;
+  const publicMode = canPublish && isPublic;
   const effectiveDeptIds = lockedDept ? [String(lockedDept._id)] : selectedDeptIds;
   // Only a Super Admin may connect or disconnect the shared Google account.
   const canManageConnection = authStatus.canManageConnection !== false && !scoped;
@@ -759,8 +761,8 @@ export default function GoogleDriveModal({
                     )}
                   </div>
 
-                  {/* Only a Super Admin can publish documents to everyone */}
-                  {!scoped && (
+                  {/* Super Admin, or a Department Admin with more than 1 department, can publish to everyone */}
+                  {canPublish && (
                     <div style={{ flexShrink: 0 }}>
                       <div style={{ fontSize: '13px', fontWeight: 600, color: C.textSoft, marginBottom: '6px' }}>
                         Who can see
@@ -800,7 +802,7 @@ export default function GoogleDriveModal({
                 <p style={{ fontSize: '12.5px', color: C.muted, margin: '10px 2px 0', lineHeight: 1.4 }}>
                   {publicMode
                     ? 'Everyone in every department can view and search these files.'
-                    : scoped
+                    : !canPublish
                       ? 'Only people in your department can view and search these files.'
                       : 'Only the selected departments can view and search these files.'}
                 </p>

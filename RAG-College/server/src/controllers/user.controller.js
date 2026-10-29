@@ -20,15 +20,26 @@ function fail(res, status, message) {
   return res.status(status).json({ success: false, message });
 }
 
-// Reads the requested department from either `departmentId` or `departmentIds`.
-function readRequestedDepartment(body) {
+// Reads requested departments from `departmentIds` (array) or legacy `departmentId`.
+// Returns undefined when neither field was sent, otherwise a de-duplicated array of id strings.
+function readRequestedDepartments(body) {
   const raw =
-    body.departmentId !== undefined
-      ? body.departmentId
-      : Array.isArray(body.departmentIds)
-        ? body.departmentIds[0]
-        : body.departmentIds;
-  return toIdString(raw);
+    body.departmentIds !== undefined
+      ? body.departmentIds
+      : body.departmentId !== undefined
+        ? body.departmentId
+        : undefined;
+  if (raw === undefined) return undefined;
+  const list = Array.isArray(raw) ? raw : [raw];
+  return [...new Set(list.map(toIdString).filter(Boolean))];
+}
+
+// Returns an error message, or null when every id is valid and exists.
+async function validateDepartments(ids) {
+  if (ids.some((id) => !mongoose.isValidObjectId(id))) return 'Invalid department.';
+  const count = await Department.countDocuments({ _id: { $in: ids } });
+  if (count !== ids.length) return 'Selected department does not exist.';
+  return null;
 }
 
 // GET /api/users - Super Admin: every user. Department Admin: only staff inside their departments.
@@ -74,7 +85,7 @@ exports.createUser = async (req, res, next) => {
     }
 
     const newRole = role === 'admin' ? 'admin' : 'user';
-    let deptId = readRequestedDepartment(req.body);
+    let deptIds = readRequestedDepartments(req.body) || [];
 
     if (isScopedAdmin(actor)) {
       const actorDepts = getUserDepartmentIds(actor);
@@ -83,27 +94,22 @@ exports.createUser = async (req, res, next) => {
         return fail(res, 403, 'Only a Super Admin can create administrator accounts.');
       }
 
-      if (!deptId) {
+      if (deptIds.length === 0) {
         if (actorDepts.length === 1) {
-          deptId = actorDepts[0];
+          deptIds = [actorDepts[0]];
         } else {
-          return fail(res, 400, 'Select one of your departments for this user.');
+          return fail(res, 400, 'Select at least one of your departments for this user.');
         }
       }
 
-      if (!actorDepts.includes(deptId)) {
+      if (!deptIds.every((id) => actorDepts.includes(id))) {
         return fail(res, 403, 'You can only add users to departments assigned to you.');
       }
     }
 
-    if (deptId) {
-      if (!mongoose.isValidObjectId(deptId)) {
-        return fail(res, 400, 'Invalid department.');
-      }
-      const deptExists = await Department.exists({ _id: deptId });
-      if (!deptExists) {
-        return fail(res, 400, 'Selected department does not exist.');
-      }
+    if (deptIds.length) {
+      const deptError = await validateDepartments(deptIds);
+      if (deptError) return fail(res, 400, deptError);
     }
 
     const existingUser = await User.findOne({ email: email.toLowerCase().trim() });
@@ -123,8 +129,8 @@ exports.createUser = async (req, res, next) => {
       email: email.toLowerCase().trim(),
       passwordHash,
       role: newRole,
-      departmentId: deptId || null,
-      departmentIds: deptId ? [deptId] : [],
+      departmentId: deptIds[0] || null, // primary department (kept for backward compatibility)
+      departmentIds: deptIds,
       status: 'active'
     });
 
@@ -177,7 +183,7 @@ exports.toggleUserStatus = async (req, res, next) => {
   }
 };
 
-// PUT /api/users/:id - Edit user name / role / department
+// PUT /api/users/:id - Edit user name / role / departments
 exports.updateUser = async (req, res, next) => {
   try {
     const { id } = req.params;
@@ -196,8 +202,7 @@ exports.updateUser = async (req, res, next) => {
     }
 
     const isSelf = toIdString(actor._id) === String(id);
-    const departmentProvided = req.body.departmentId !== undefined || req.body.departmentIds !== undefined;
-    const requestedDept = departmentProvided ? readRequestedDepartment(req.body) : undefined;
+    const requestedDepts = readRequestedDepartments(req.body); // undefined => not provided
 
     if (role && ['admin', 'user'].includes(role)) {
       if (isScopedAdmin(actor) && role === 'admin') {
@@ -211,22 +216,21 @@ exports.updateUser = async (req, res, next) => {
 
     if (name) target.name = name.trim();
 
-    if (departmentProvided) {
+    if (requestedDepts !== undefined) {
       if (isScopedAdmin(actor)) {
         const actorDepts = getUserDepartmentIds(actor);
-        if (!requestedDept || !actorDepts.includes(requestedDept)) {
+        if (!requestedDepts.length || !requestedDepts.every((d) => actorDepts.includes(d))) {
           return fail(res, 403, 'You can only assign users to departments assigned to you.');
         }
       }
 
-      if (requestedDept) {
-        if (!mongoose.isValidObjectId(requestedDept)) return fail(res, 400, 'Invalid department.');
-        const deptExists = await Department.exists({ _id: requestedDept });
-        if (!deptExists) return fail(res, 400, 'Selected department does not exist.');
+      if (requestedDepts.length) {
+        const deptError = await validateDepartments(requestedDepts);
+        if (deptError) return fail(res, 400, deptError);
       }
 
-      target.departmentId = requestedDept || null;
-      target.departmentIds = requestedDept ? [requestedDept] : [];
+      target.departmentId = requestedDepts[0] || null;
+      target.departmentIds = requestedDepts;
     }
 
     await target.save();

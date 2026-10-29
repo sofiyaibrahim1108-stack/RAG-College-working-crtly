@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import MultiSelectDropdown from './MultiSelectDropdown';
 import { getFriendlyErrorMessage } from '../utils/errorHandler';
-import { isDepartmentAdmin } from '../utils/access';
+import { isDepartmentAdmin, getUserDepartmentIds } from '../utils/access';
 
 export default function UploadModal({
   isOpen,
@@ -44,11 +44,13 @@ export default function UploadModal({
 
   const supportedExtensions = ['.pdf', '.doc', '.docx', '.csv', '.xls', '.xlsx', '.txt', '.ppt', '.pptx'];
 
-  // Department Admins always upload privately into their own department(s).
+  // Department Admins upload into their own department(s).
   const scoped = isDepartmentAdmin(currentUser);
   // With exactly one department there is nothing to choose, so it is fixed.
   const lockedDept = scoped && departments.length === 1 ? departments[0] : null;
-  const publicMode = !scoped && isPublic;
+  // Super Admin, or a Department Admin with more than 1 department, can publish to everyone.
+  const canPublish = !scoped || getUserDepartmentIds(currentUser).length > 1;
+  const publicMode = canPublish && isPublic;
   const effectiveDeptIds = lockedDept ? [String(lockedDept._id)] : selectedDeptIds;
 
   const handleClose = () => {
@@ -272,8 +274,8 @@ export default function UploadModal({
                 </span>
               </div>
 
-              {/* Only a Super Admin can publish documents to everyone */}
-              {!scoped && (
+              {/* Super Admin, or a Department Admin with more than 1 department, can publish to everyone */}
+              {canPublish && (
                 <div style={{ display: 'flex', background: '#E2E8F0', padding: '3px', borderRadius: '9px', gap: '2px' }}>
                   <button
                     type="button"
@@ -319,7 +321,7 @@ export default function UploadModal({
             <p style={{ fontSize: '12.5px', color: '#475569', margin: '8px 2px 0', lineHeight: 1.4 }}>
               {publicMode
                 ? 'Everyone in every department can view and search these files.'
-                : scoped
+                : !canPublish
                   ? 'Only people in your department can view and search these files.'
                   : 'Only the selected departments can view and search these files.'}
             </p>
