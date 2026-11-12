@@ -280,6 +280,7 @@ function selectRelevantRanked(rankedChunks) {
 function pickContextChunks(rankedChunks, candidateChunks) {
   const rankedList = Array.isArray(rankedChunks) ? rankedChunks : [];
   const bestScore = rankedList.length > 0 ? chunkScoreOf(rankedList[0]) : null;
+  console.log('[DEBUG GATE]', { bestScore, minTopScore: RET.minTopScore, minRelevanceScore: RET.minRelevanceScore });
   if (bestScore !== null && bestScore < RET.minTopScore) return [];
 
   const seen = new Set();
