@@ -15,6 +15,7 @@ const authRoutes = require('./routes/auth.routes');
 const userRoutes = require('./routes/user.routes');
 const auditRoutes = require('./routes/audit.routes');
 const mediaRoutes = require('./routes/media.routes'); 
+const sqlImportRoutes = require('./routes/sql-import.routes');
 
 const app = express();
 
@@ -71,7 +72,8 @@ app.use('/api/drive', driveRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/audit-logs', auditRoutes);
-app.use('/api/media-library', mediaRoutes); // 👈 Mounted here
+app.use('/api/media-library', mediaRoutes)
+app.use('/api/sql-import', sqlImportRoutes);
 
 // Root route
 app.get('/', (req, res) => {

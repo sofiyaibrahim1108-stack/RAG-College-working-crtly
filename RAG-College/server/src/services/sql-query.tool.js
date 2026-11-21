@@ -1,6 +1,9 @@
 const { querySql, getSqlPool, isSqlConnected } = require('../config/sql.db');
 const { MYSQL_DATABASE } = require('../config/env');
 const { generateText } = require('./llm.service');
+const { generateEmbedding } = require('./embedding.service');
+const SqlEmbedding = require('../models/SqlEmbedding');
+const sqlVectorService = require('./sql-vector.service');
 
 const intEnv = (name, fallback) => {
   const v = parseInt(process.env[name], 10);
@@ -32,6 +35,18 @@ const SQL_GEN_TEMPERATURE = floatEnv('SQL_GEN_TEMPERATURE', 0);
 const SQL_GEN_MAX_TOKENS = posIntEnv('SQL_GEN_MAX_TOKENS', 300);
 const ANSWER_GEN_TEMPERATURE = floatEnv('SQL_ANSWER_TEMPERATURE', 0.1);
 const ANSWER_GEN_MAX_TOKENS = posIntEnv('SQL_ANSWER_MAX_TOKENS', 400);
+const SEMANTIC_SUMMARY_MIN_SCORE = floatEnv('SQL_SEMANTIC_SUMMARY_MIN_SCORE', 0.45);
+const SEMANTIC_ROW_MIN_SCORE = floatEnv('SQL_SEMANTIC_ROW_MIN_SCORE', 0.50);
+const SEMANTIC_ROW_FALLBACK_MIN_SCORE = floatEnv('SQL_SEMANTIC_ROW_FALLBACK_MIN_SCORE', 0.55);
+const SEMANTIC_ROW_TOP_K = posIntEnv('SQL_SEMANTIC_ROW_TOP_K', 6);
+const SEMANTIC_ROW_PROMPT_HINTS = posIntEnv('SQL_SEMANTIC_ROW_PROMPT_HINTS', 3);
+
+const EXCLUDED_TABLES = new Set(
+  (process.env.SQL_EXCLUDED_TABLES || 'sql_dataset_registry')
+    .split(',')
+    .map((t) => t.trim().toLowerCase())
+    .filter(Boolean)
+);
 
 const BLOCKED_SQL_KEYWORDS =
   /\b(INSERT|UPDATE|DELETE|DROP|ALTER|TRUNCATE|CREATE|REPLACE|GRANT|REVOKE|EXEC|EXECUTE|INTO|FOR\s+UPDATE|LOCK\s+IN\s+SHARE\s+MODE|LOAD_FILE)\b/i;
@@ -175,6 +190,8 @@ async function fetchSchemaFromDb() {
   const grouped = new Map();
   for (const r of rows) {
     const tName = r.tableName;
+    if (EXCLUDED_TABLES.has(String(tName || '').toLowerCase())) continue;
+
     if (!grouped.has(tName)) {
       grouped.set(tName, {
         tableName: tName,
@@ -205,7 +222,7 @@ async function fetchSchemaFromDb() {
       tableInfo.sampleRows = [];
     }
 
-    // Dynamically discover low-cardinality categorical column values (no hardcoded column names)
+    // Dynamically discover low-cardinality categorical column values
     for (const col of tableInfo.columns) {
       const dt = String(col.type || '').toLowerCase();
       if (!CATEGORICAL_DATA_TYPES.has(dt)) continue;
@@ -283,8 +300,7 @@ async function getMySqlSchema(forceRefresh = false) {
 }
 
 /**
- * Ranks tables strictly against table names, column names, and discovered
- * low-cardinality categorical values (never raw free-text sample descriptions).
+ * Ranks tables against table names, column names, and discovered categorical values.
  */
 function rankTablesForQuery(tables, queryText = '') {
   const tokens = tokenizeMeaningful(queryText);
@@ -335,24 +351,172 @@ function rankTablesForQuery(tables, queryText = '') {
 }
 
 /**
- * Returns hints only for MySQL tables whose schema or categorical values
- * match the query, preventing unrelated PDF/DOC questions from entering SQL.
+ * Retrieves both summary-level and row-level semantic matches from the isolated
+ * SQL vector index and hydrates row content from MongoDB SqlEmbedding.
+ */
+async function retrieveSemanticSqlContext(queryText) {
+  const cleanQuery = String(queryText || '').trim();
+  if (!cleanQuery) {
+    return { summaryHits: [], rowHits: [], hydratedRows: [] };
+  }
+
+  try {
+    const stats = await sqlVectorService.getStats();
+    if (!stats || stats.vectorCount === 0) {
+      return { summaryHits: [], rowHits: [], hydratedRows: [] };
+    }
+
+    const queryVector = await generateEmbedding(cleanQuery);
+
+    const [summaryHits, rowHits] = await Promise.all([
+      stats.summaryCount > 0
+        ? sqlVectorService.searchSummaries(queryVector, 5, SEMANTIC_SUMMARY_MIN_SCORE)
+        : Promise.resolve([]),
+      stats.rowCount > 0
+        ? sqlVectorService.searchRows(queryVector, null, SEMANTIC_ROW_TOP_K, SEMANTIC_ROW_MIN_SCORE)
+        : Promise.resolve([])
+    ]);
+
+    let hydratedRows = [];
+    if (rowHits.length > 0) {
+      const embeddingIds = rowHits.map((h) => h.embeddingId).filter(Boolean);
+      if (embeddingIds.length > 0) {
+        const docs = await SqlEmbedding.find({ _id: { $in: embeddingIds } })
+          .select('_id datasetId targetTable mysqlRowId content metadata')
+          .lean();
+
+        const docById = new Map(docs.map((d) => [String(d._id), d]));
+        hydratedRows = rowHits
+          .map((hit) => {
+            const doc = docById.get(String(hit.embeddingId));
+            if (!doc || !doc.content) return null;
+            return {
+              embeddingId: String(doc._id),
+              datasetId: doc.datasetId,
+              targetTable: doc.targetTable,
+              mysqlRowId: doc.mysqlRowId || null,
+              score: hit.score,
+              content: doc.content,
+              metadata: doc.metadata || {}
+            };
+          })
+          .filter(Boolean);
+      }
+    }
+
+    return { summaryHits, rowHits, hydratedRows };
+  } catch (err) {
+    console.warn('[SqlQueryTool] Semantic SQL retrieval warning:', err.message);
+    return { summaryHits: [], rowHits: [], hydratedRows: [] };
+  }
+}
+
+/**
+ * Selects the most relevant tables by merging lexical schema scores with
+ * dataset-summary and row-level semantic scores (prevents semantic tables from
+ * being dropped by an incidental lexical word match on another table).
+ */
+function selectCandidateTables(allTables, queryText, semanticCtx) {
+  const lexicalRanked = rankTablesForQuery(allTables, queryText);
+  const summaryScoreByTable = new Map();
+  const rowScoreByTable = new Map();
+
+  for (const hit of semanticCtx.summaryHits || []) {
+    const prev = summaryScoreByTable.get(hit.targetTable) || 0;
+    if (hit.score > prev) summaryScoreByTable.set(hit.targetTable, hit.score);
+  }
+
+  for (const hit of semanticCtx.rowHits || []) {
+    const prev = rowScoreByTable.get(hit.targetTable) || 0;
+    if (hit.score > prev) rowScoreByTable.set(hit.targetTable, hit.score);
+  }
+
+  const combined = lexicalRanked.map((item) => {
+    const tName = item.table.tableName;
+    const summaryScore = summaryScoreByTable.get(tName) || 0;
+    const rowScore = rowScoreByTable.get(tName) || 0;
+    const semanticBoost = summaryScore * 4 + rowScore * 6;
+    return {
+      table: item.table,
+      lexicalScore: item.score,
+      summaryScore,
+      rowScore,
+      totalScore: item.score + semanticBoost,
+      matchedWords: item.matchedWords
+    };
+  });
+
+  combined.sort((a, b) => b.totalScore - a.totalScore);
+
+  const relevant = combined.filter((c) => c.totalScore > 0);
+  const chosen = relevant.length > 0 ? relevant : combined;
+  return chosen.slice(0, MAX_TABLES_IN_PROMPT);
+}
+
+/**
+ * Returns hints for MySQL tables matching lexical schema/categorical values,
+ * dataset-summary embeddings, or row-level SQL embeddings.
  */
 async function getSqlTableHints(queryText = '') {
   try {
     const tables = await getMySqlSchema();
     if (!tables || tables.length === 0) return [];
 
+    const tableByName = new Map(tables.map((t) => [t.tableName, t]));
     const ranked = rankTablesForQuery(tables, queryText);
     const matching = ranked.filter((item) => item.score >= 2);
 
-    return matching.map((item) => ({
-      name: item.table.tableName,
-      table: item.table.tableName,
-      sourceType: 'mysql',
-      columns: item.table.columns.map((c) => c.name),
-      matchedWords: item.matchedWords
-    }));
+    const hintMap = new Map();
+    for (const item of matching) {
+      hintMap.set(item.table.tableName, {
+        name: item.table.tableName,
+        table: item.table.tableName,
+        sourceType: 'mysql',
+        columns: item.table.columns.map((c) => c.name),
+        matchedWords: item.matchedWords
+      });
+    }
+
+    const cleanQuery = String(queryText || '').trim();
+    if (cleanQuery.length > 0) {
+      try {
+        const sqlVecStats = await sqlVectorService.getStats();
+        if (sqlVecStats.vectorCount > 0) {
+          const queryVector = await generateEmbedding(cleanQuery);
+          const [summaryHits, rowHits] = await Promise.all([
+            sqlVecStats.summaryCount > 0
+              ? sqlVectorService.searchSummaries(queryVector, 5, SEMANTIC_SUMMARY_MIN_SCORE)
+              : Promise.resolve([]),
+            sqlVecStats.rowCount > 0
+              ? sqlVectorService.searchRows(queryVector, null, 5, SEMANTIC_ROW_FALLBACK_MIN_SCORE)
+              : Promise.resolve([])
+          ]);
+
+          for (const hit of [...summaryHits, ...rowHits]) {
+            const liveTable = tableByName.get(hit.targetTable);
+            if (!liveTable) continue;
+
+            if (hintMap.has(hit.targetTable)) {
+              const prev = hintMap.get(hit.targetTable).semanticScore || 0;
+              hintMap.get(hit.targetTable).semanticScore = Math.max(prev, hit.score);
+            } else {
+              hintMap.set(hit.targetTable, {
+                name: liveTable.tableName,
+                table: liveTable.tableName,
+                sourceType: 'mysql',
+                columns: liveTable.columns.map((c) => c.name),
+                matchedWords: [],
+                semanticScore: hit.score
+              });
+            }
+          }
+        }
+      } catch (semErr) {
+        console.warn('[SqlQueryTool] Semantic table hint skipped:', semErr.message);
+      }
+    }
+
+    return Array.from(hintMap.values());
   } catch (err) {
     console.warn('[SqlQueryTool] Failed to build SQL table hints:', err.message);
     return [];
@@ -361,16 +525,21 @@ async function getSqlTableHints(queryText = '') {
 
 function sanitizeSqlOutput(rawText) {
   if (!rawText || typeof rawText !== 'string') return '';
-  let cleaned = rawText
-    .replace(/```sql/gi, '')
-    .replace(/```/g, '')
-    .trim();
 
-  const cteOrSelectIdx = cleaned.search(/\b(?:WITH|SELECT)\b/i);
-  if (cteOrSelectIdx !== -1) {
-    cleaned = cleaned.slice(cteOrSelectIdx).trim();
+  const fenceMatch = rawText.match(/```(?:sql|mysql)?\s*([\s\S]*?)```/i);
+  let cleaned = (fenceMatch ? fenceMatch[1] : rawText).trim();
+
+  // Match a real SQL CTE ("WITH name AS (") or SELECT — avoids matching English "with"
+  const cteMatch = cleaned.match(/\bWITH\s+`?[a-zA-Z0-9_]+`?\s*(?:\([^)]*\))?\s+AS\s*\(/i);
+  const selectIdx = cleaned.search(/\bSELECT\b/i);
+
+  if (cteMatch && (selectIdx === -1 || cteMatch.index < selectIdx)) {
+    cleaned = cleaned.slice(cteMatch.index).trim();
+  } else if (selectIdx !== -1) {
+    cleaned = cleaned.slice(selectIdx).trim();
   }
 
+  cleaned = cleaned.split(/;\s*(?:\n|$)/)[0].trim();
   cleaned = cleaned.replace(/;+\s*$/g, '').trim();
   return cleaned;
 }
@@ -501,10 +670,82 @@ function formatRowsDeterministically(rows) {
 }
 
 /**
+ * Fallback that answers directly from semantically matched SQL row embeddings
+ * whenever SQL generation/execution fails or returns 0 rows (e.g. synonyms or
+ * alternate user phrasing). Returns null if the matched rows do not answer the question.
+ */
+async function trySemanticSqlRowFallback(cleanQuestion, hydratedRows) {
+  const strongRows = (hydratedRows || []).filter(
+    (r) => r.score >= SEMANTIC_ROW_FALLBACK_MIN_SCORE && r.content
+  );
+  if (strongRows.length === 0) return null;
+
+  const contextBlock = strongRows
+    .map((r, i) => `[${i + 1}] (score ${r.score.toFixed(2)}) ${r.content}`)
+    .join('\n');
+
+  const prompt = `User Question: ${cleanQuestion}
+
+Retrieved Database Rows:
+${contextBlock}
+
+Rules:
+- Answer strictly and concisely using ONLY the Retrieved Database Rows above.
+- If the rows do NOT contain the answer to the User Question, reply with exactly: NO_MATCH
+- Never invent or assume facts not present in the rows.`;
+
+  try {
+    const answer = await withTimeout(
+      generateText({
+        prompt,
+        system:
+          'You answer strictly from retrieved structured database rows. If the rows do not answer the question, output exactly NO_MATCH.',
+        temperature: ANSWER_GEN_TEMPERATURE,
+        maxTokens: ANSWER_GEN_MAX_TOKENS
+      }),
+      SQL_LLM_TIMEOUT_MS,
+      'SQL semantic row fallback'
+    );
+
+    const trimmed = String(answer || '').trim();
+    if (!trimmed || /^NO_MATCH\b/i.test(trimmed)) {
+      return null;
+    }
+
+    const usedTables = Array.from(new Set(strongRows.map((r) => r.targetTable).filter(Boolean)));
+    const sources = usedTables.map((tableName, idx) => ({
+      type: 'sql',
+      source: 'mysql',
+      sourceType: 'MySQL (Semantic Row Match)',
+      tableName,
+      citationIndex: idx + 1,
+      citationMarker: `[${idx + 1}]`,
+      label: `${MYSQL_DATABASE}.${tableName}`,
+      snippet: `Matched ${strongRows.length} embedded row(s)`
+    }));
+
+    console.log(
+      `[SqlQueryTool] Answered via SQL row embeddings fallback (${strongRows.length} rows, tables=${JSON.stringify(usedTables)})`
+    );
+
+    return {
+      status: 'ok',
+      sql: '',
+      rowCount: strongRows.length,
+      answer: trimmed,
+      sources
+    };
+  } catch (err) {
+    console.warn('[SqlQueryTool] Semantic row fallback failed:', err.message);
+    return null;
+  }
+}
+
+/**
  * Database Query Tool:
- * Blocks mutation intents, selects relevant tables using live schema + categorical
- * metadata, generates a read-only SELECT query, executes with a DB row limit and
- * timeout, cites only used tables, and formats answers fast without clogging Ollama.
+ * Blocks mutation intents, selects relevant tables using live schema + semantic
+ * SQL embeddings, generates and executes a read-only SELECT query, and falls
+ * back to semantic SQL row embeddings when SQL fails or returns 0 rows.
  */
 async function executeSqlQuery(question, _scope = null) {
   const cleanQuestion = String(question || '').trim();
@@ -528,7 +769,11 @@ async function executeSqlQuery(question, _scope = null) {
   }
 
   try {
-    const allTables = await getMySqlSchema();
+    const [allTables, semanticCtx] = await Promise.all([
+      getMySqlSchema(),
+      retrieveSemanticSqlContext(cleanQuestion)
+    ]);
+
     if (!allTables || allTables.length === 0) {
       return {
         status: 'no_data',
@@ -537,13 +782,20 @@ async function executeSqlQuery(question, _scope = null) {
       };
     }
 
-    const ranked = rankTablesForQuery(allTables, cleanQuestion);
-    const matching = ranked.filter((item) => item.score > 0);
-    const selectedTables = (matching.length > 0 ? matching : ranked)
-      .slice(0, MAX_TABLES_IN_PROMPT)
-      .map((item) => item.table);
-
+    const rankedCandidates = selectCandidateTables(allTables, cleanQuestion, semanticCtx);
+    const selectedTables = rankedCandidates.map((c) => c.table);
     const allowedTableNames = allTables.map((t) => t.tableName);
+
+    // Group top semantically matched rows by table to help the LLM match exact stored text/synonyms
+    const semanticHintsByTable = new Map();
+    for (const row of semanticCtx.hydratedRows || []) {
+      const list = semanticHintsByTable.get(row.targetTable) || [];
+      if (list.length < SEMANTIC_ROW_PROMPT_HINTS) {
+        list.push(row.content);
+        semanticHintsByTable.set(row.targetTable, list);
+      }
+    }
+
     const schemaDescription = selectedTables
       .map((t) => {
         const cols = t.columns.map((c) => `${escapeBacktickId(c.name)} (${c.type})`).join(', ');
@@ -558,7 +810,12 @@ async function executeSqlQuery(question, _scope = null) {
           t.sampleRows && t.sampleRows.length > 0
             ? `\nSample rows: ${JSON.stringify(t.sampleRows)}`
             : '';
-        return `Table ${escapeBacktickId(t.tableName)}: [${cols}]${categoriesText}${samples}`;
+        const semRows = semanticHintsByTable.get(t.tableName) || [];
+        const semRowsText =
+          semRows.length > 0
+            ? `\nClosest matching records (semantic hints): ${JSON.stringify(semRows)}`
+            : '';
+        return `Table ${escapeBacktickId(t.tableName)}: [${cols}]${categoriesText}${samples}${semRowsText}`;
       })
       .join('\n\n');
 
@@ -566,9 +823,11 @@ async function executeSqlQuery(question, _scope = null) {
 Rules:
 1. Output ONLY a single valid MySQL SELECT query. No markdown, no code fences, no explanations, no trailing semicolons.
 2. Use ONLY table names, column names, and data types from the provided schema.
-3. Never generate INSERT, UPDATE, DELETE, DROP, ALTER, CREATE, TRUNCATE, UNION, INTO, or comments.
-4. Match exact categorical values shown in Distinct categorical values when filtering categorical columns.
-5. Select clear, user-relevant columns and avoid unnecessary internal surrogate ID or audit timestamp columns unless explicitly requested. Give clear column aliases to aggregate expressions.`;
+3. Sample rows are only a tiny preview of the table—ALWAYS write a SELECT query to search the full table even if the requested value or date does not appear in Sample rows.
+4. When matching text values, prefer flexible case-insensitive LIKE patterns or exact values seen in Closest matching records when available.
+5. Never generate INSERT, UPDATE, DELETE, DROP, ALTER, CREATE, TRUNCATE, UNION, INTO, or comments.
+6. Match exact categorical values shown in Distinct categorical values when filtering categorical columns.
+7. Select clear, user-relevant columns and avoid unnecessary internal surrogate ID or audit timestamp columns unless explicitly requested. Give clear column aliases to aggregate expressions.`;
 
     const sqlUserPrompt = `Database Schema:\n${schemaDescription}\n\nUser Question: ${cleanQuestion}\n\nSQL:`;
 
@@ -589,7 +848,12 @@ Rules:
     try {
       usedTableNamesLower = assertReadOnlySelect(sql, allowedTableNames);
     } catch (guardErr) {
-      console.warn('[SqlQueryTool] Blocked unsafe/invalid SQL:', guardErr.message);
+      console.warn('[SqlQueryTool] Blocked unsafe/invalid SQL:', guardErr.message, '| rawSql:', rawSql);
+      const semanticFallback = await trySemanticSqlRowFallback(
+        cleanQuestion,
+        semanticCtx.hydratedRows
+      );
+      if (semanticFallback) return semanticFallback;
       return {
         status: 'failed',
         answer: 'Unable to construct a valid read-only database query for this request.',
@@ -603,6 +867,11 @@ Rules:
       rows = await querySql(boundedSql, [], SQL_QUERY_TIMEOUT_MS);
     } catch (dbErr) {
       console.error('[SqlQueryTool] MySQL query execution error:', dbErr.message);
+      const semanticFallback = await trySemanticSqlRowFallback(
+        cleanQuestion,
+        semanticCtx.hydratedRows
+      );
+      if (semanticFallback) return semanticFallback;
       return {
         status: 'failed',
         answer: 'An error occurred while executing the database query.',
@@ -611,8 +880,17 @@ Rules:
     }
 
     const rowList = Array.isArray(rows) ? rows : [];
-    let finalAnswer = '';
 
+    // If strict SQL returned 0 rows (e.g. synonym/wording mismatch), try semantic SQL row fallback
+    if (rowList.length === 0) {
+      const semanticFallback = await trySemanticSqlRowFallback(
+        cleanQuestion,
+        semanticCtx.hydratedRows
+      );
+      if (semanticFallback) return semanticFallback;
+    }
+
+    let finalAnswer = '';
     if (rowList.length === 0) {
       finalAnswer = 'No matching records were found in the database.';
     } else if (LLM_SYNTHESIS_MAX_ROWS > 0 && rowList.length <= LLM_SYNTHESIS_MAX_ROWS) {
@@ -642,7 +920,6 @@ Rules:
         finalAnswer = formatRowsDeterministically(rowList);
       }
     } else {
-      // Multi-row result: format directly without an extra LLM pass to keep latency low
       finalAnswer = formatRowsDeterministically(rowList);
     }
 

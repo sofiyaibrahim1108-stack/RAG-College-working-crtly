@@ -8,8 +8,11 @@ const Document = require('./models/Document');
 const DocumentChunk = require('./models/DocumentChunk');
 const Image = require('./models/Image');
 const MediaLibrary = require('./models/MediaLibrary'); // Media Library Schema
+const SqlEmbedding = require('./models/SqlEmbedding');
 const vectorService = require('./services/vector.service');
 const imageVectorService = require('./services/image-vector.service');
+const sqlVectorService = require('./services/sql-vector.service');
+const { recoverInterruptedEmbeddings } = require('./services/sql-import.service');
 const { processDocument } = require('./services/processor.service');
 const siglipService = require('./services/siglip.service');
 const { protect: requireAuth } = require('./middlewares/auth.middleware'); // Sariyaana middlewares folder path
@@ -98,8 +101,7 @@ const startServer = async () => {
   // 1. Connect to local MongoDB
   await connectDB();
 
-
-  // 1b. Connect to MySQL 
+  // 1b. Connect to MySQL
   await connectSqlDB();
 
   // 2. Initialize local text vector index
@@ -143,6 +145,28 @@ const startServer = async () => {
     }
   } catch (imgVecErr) {
     console.warn(`[ImageVectorIndex] Warning during image vector index init: ${imgVecErr.message}`);
+  }
+
+  // 3b. Initialize isolated SQL vector index & recover interrupted embedding jobs
+  try {
+    await recoverInterruptedEmbeddings();
+    await sqlVectorService.init();
+    const sqlVecStats = await sqlVectorService.getStats();
+    console.log(
+      `[SqlVectorIndex] SQL ANN Vector Store active: ${sqlVecStats.vectorCount} vectors indexed (Summaries: ${sqlVecStats.summaryCount}, Rows: ${sqlVecStats.rowCount}, Dim: ${sqlVecStats.dimension})`
+    );
+
+    const embeddedSqlCount = await SqlEmbedding.countDocuments({
+      embedding: { $exists: true, $ne: [] }
+    });
+    if (embeddedSqlCount > 0 && sqlVecStats.vectorCount === 0) {
+      console.log(
+        `[SqlVectorIndex] Reconciling ${embeddedSqlCount} SQL embeddings from MongoDB into local vector index...`
+      );
+      await sqlVectorService.rebuild(SqlEmbedding);
+    }
+  } catch (sqlVecErr) {
+    console.warn(`[SqlVectorIndex] Warning during SQL vector index init: ${sqlVecErr.message}`);
   }
 
   // 4. Log SigLIP Status
@@ -192,6 +216,7 @@ const startServer = async () => {
     console.log(` Documents API: http://localhost:${PORT}/api/documents`);
     console.log(` Images API: http://localhost:${PORT}/api/images`);
     console.log(` Media Library API: http://localhost:${PORT}/api/media-library`);
+    console.log(` SQL Import API: http://localhost:${PORT}/api/sql-import`);
     console.log(` Chat API: http://localhost:${PORT}/api/chat`);
     console.log(`=======================================================`);
   });
