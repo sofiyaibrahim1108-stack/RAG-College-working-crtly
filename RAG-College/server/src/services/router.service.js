@@ -1,6 +1,7 @@
 const { generateText } = require('./llm.service');
-const { getTableHints } = require('./tabular.service');
+// const { getTableHints } = require('./tabular.service');
 const Department = require('../models/Department');
+const { getSqlTableHints } = require('./sql-query.tool');
 
 const OBJECT_ID_FORMAT = /^[0-9a-fA-F]{24}$/;
 
@@ -138,14 +139,9 @@ async function resolveDepartments(selectedDepartments) {
 
 const hintName = (hint) => hint.name || hint.tableName;
 
-async function fetchTableHints(question, departmentIds, selectedDepartments, options) {
+async function fetchTableHints(question, _departmentIds, _selectedDepartments, _options) {
   try {
-    const scope = {
-      departmentIds,
-      documentId: options?.documentId || null,
-      blockAll: Array.isArray(selectedDepartments) && selectedDepartments.length > 0 && departmentIds.length === 0
-    };
-    const hints = await getTableHints(question, scope);
+    const hints = await getSqlTableHints(question);
     if (!Array.isArray(hints)) return [];
     return hints.filter((h) => typeof h.score !== 'number' || h.score >= TABLE_HINT_MIN_SCORE);
   } catch (_) {

@@ -75,6 +75,23 @@ const DocumentSchema = new mongoose.Schema(
     imageCount: {
       type: Number,
       default: 0
+    },
+
+    // Excel/CSV only: layout analysis written by the LLM once, right after upload.
+    // Used by tabular.service.js; ignored for every other file type.
+    tabularProfile: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null
+    },
+    tabularProfileStatus: {
+      type: String,
+      enum: ['none', 'pending', 'ready', 'failed'],
+      default: 'none',
+      index: true
+    },
+    tabularProfileError: {
+      type: String,
+      default: null
     }
   },
   {

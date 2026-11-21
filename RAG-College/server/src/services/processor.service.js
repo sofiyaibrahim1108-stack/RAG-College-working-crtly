@@ -9,6 +9,7 @@ const vectorService = require('./vector.service');
 const imageVectorService = require('./image-vector.service');
 const { extractDocumentImages, removeExtractedImages } = require('./image-extractor.service');
 const siglipService = require('./siglip.service');
+const { buildTabularProfile, invalidateTabularCache } = require('./tabular.service');
 
 /**
  * Small helper to log how long each ingestion step takes
@@ -184,6 +185,12 @@ async function processDocument(docId) {
       author: null
     };
     await doc.save();
+    // 9b. Excel/CSV: LLM studies the layout once (background, does not delay "completed")
+    if (['csv', 'xls', 'xlsx'].includes(String(doc.fileType).toLowerCase())) {
+      buildTabularProfile(doc._id)
+        .then(() => invalidateTabularCache())
+        .catch((err) => console.warn('[Processor] Tabular profile failed:', err.message));
+    }
 
     // 10. Update department document counts
     if (doc.departmentIds && doc.departmentIds.length > 0) {

@@ -20,11 +20,11 @@ module.exports = {
   JWT_SECRET: jwtSecret,
   JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN || '7d',
   OLLAMA_BASE_URL: process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434',
-  
+
   // ONNX Embedding Model Config (Aligned with embedding.service.js)
   ONNX_EMBEDDING_MODEL: process.env.ONNX_EMBEDDING_MODEL || 'Xenova/bge-large-en-v1.5',
   EMBEDDING_BATCH_SIZE: parseInt(process.env.EMBEDDING_BATCH_SIZE, 10) || 36,
-  
+
   LLM_MODEL: process.env.LLM_MODEL || 'qwen2.5-coder:3b',
   SIGLIP_BASE_URL: process.env.SIGLIP_BASE_URL || 'http://127.0.0.1:8000',
 
@@ -39,5 +39,12 @@ module.exports = {
   // Google Drive OAuth Config
   GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || '',
   GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET || '',
-  GOOGLE_REDIRECT_URI: process.env.GOOGLE_REDIRECT_URI || 'http://localhost:5000/api/drive/callback'
-};  
+  GOOGLE_REDIRECT_URI: process.env.GOOGLE_REDIRECT_URI || 'http://localhost:5000/api/drive/callback',
+
+// mysql
+MYSQL_HOST: process.env.MYSQL_HOST || '127.0.0.1',
+  MYSQL_PORT: parseInt(process.env.MYSQL_PORT, 10) || 3306,
+    MYSQL_USER: process.env.MYSQL_USER || 'root',
+      MYSQL_PASSWORD: process.env.MYSQL_PASSWORD || 'root',
+        MYSQL_DATABASE: process.env.MYSQL_DATABASE || 'college_rag_sql'
+}

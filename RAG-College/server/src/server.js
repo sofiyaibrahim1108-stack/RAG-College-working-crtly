@@ -13,6 +13,7 @@ const imageVectorService = require('./services/image-vector.service');
 const { processDocument } = require('./services/processor.service');
 const siglipService = require('./services/siglip.service');
 const { protect: requireAuth } = require('./middlewares/auth.middleware'); // Sariyaana middlewares folder path
+const { connectSqlDB } = require('./config/sql.db');
 
 // Fast Router integration
 const { warmUpRouter, routeQuery } = require('./services/router.service');
@@ -96,6 +97,10 @@ app.post('/api/chat-stream', async (req, res) => {
 const startServer = async () => {
   // 1. Connect to local MongoDB
   await connectDB();
+
+
+  // 1b. Connect to MySQL 
+  await connectSqlDB();
 
   // 2. Initialize local text vector index
   try {

@@ -6,9 +6,10 @@ const { rerankChunks } = require('../reranker.service');
 const { verifyGrounding } = require('../grounding.service');
 const { retrieveRelevantImages } = require('../image-retrieval.service');
 const { generateText, streamText } = require('../llm.service');
-const { executeTabularQuery } = require('../tabular.service');
+// const { executeTabularQuery } = require('../tabular.service');
 const DocumentChunk = require('../../models/DocumentChunk');
 const Document = require('../../models/Document');
+const { executeSqlQuery } = require('../sql-query.tool');
 
 // ---------- CONFIG (all numbers, prompts, messages) ----------
 const int = (name, fallback) => {
@@ -462,7 +463,7 @@ async function tabularNode(state) {
       blockAll: isScopeUnresolved(state)
     };
 
-    const tabularResult = await executeTabularQuery(state.question || activeQueryOf(state), scope);
+    const tabularResult = await executeSqlQuery(state.question || activeQueryOf(state), scope);
     const status = tabularResult.status || '';
 
     if (TAB.fallbackStatuses.includes(status)) {
