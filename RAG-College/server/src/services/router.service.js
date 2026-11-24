@@ -149,21 +149,35 @@ async function fetchTableHints(question, _departmentIds, _selectedDepartments, _
   }
 }
 
-function applyTableEvidence(classified, tableHints) {
-  if (!TABLE_HINT_ROUTING || !classified) return classified;
+const TABLE_EVIDENCE_MIN_SEMANTIC_SCORE = envNumber('ROUTER_TABLE_EVIDENCE_MIN_SEMANTIC_SCORE', 0.52);
 
+function hasStrongTableEvidence(tableHints) {
   const validHints = (tableHints || []).filter(
     (h) => h && (h.name || h.tableName || h.originalFilename || h.filename)
   );
+  if (validHints.length === 0) return false;
 
-  // The classifier says casual, but the message matches indexed table content (cell values,
-  // column names or file names). Do not trust "casual" then: mark it contested so the LLM router decides.
+  return validHints.some((h) => {
+    const hasLexicalMatch = Array.isArray(h.matchedWords) && h.matchedWords.length > 0;
+    const hasStrongSemanticMatch =
+      typeof h.semanticScore === 'number' && h.semanticScore >= TABLE_EVIDENCE_MIN_SEMANTIC_SCORE;
+    return hasLexicalMatch || hasStrongSemanticMatch;
+  });
+}
+
+function applyTableEvidence(classified, tableHints) {
+  if (!TABLE_HINT_ROUTING || !classified) return classified;
+
+  const strongMatch = hasStrongTableEvidence(tableHints);
+
+  // The classifier says casual, but the message strongly matches indexed table content.
+  // Mark it contested only when there is genuine lexical or strong semantic table evidence.
   if (classified.intent === 'casual') {
-    return validHints.length > 0 ? { ...classified, contested: true } : classified;
+    return strongMatch ? { ...classified, contested: true } : classified;
   }
 
-  // Classifier said tabular but no indexed table matches the question: do not trust it.
-  if (validHints.length === 0) {
+  // Classifier said tabular but no strong table evidence matches the question: route to rag.
+  if (!strongMatch) {
     return classified.intent === 'tabular' ? { ...classified, intent: 'rag' } : classified;
   }
 
@@ -409,12 +423,11 @@ async function routeWithLLM(question, historySnippet, tableHints) {
   return { intent, visualMode, isVisualQuery, answerLength, searchQuery };
 }
 
-// Used when the LLM path fails. Trust the classifier's top-scoring intent
-// (relative score) instead of forcing a fixed default. Only when there is no
-// classifier signal at all do we use the env-configured NO_SIGNAL_INTENT.
-function fallbackFromClassifier(classified, searchQuery) {
+// Used when the LLM path fails. Do not force 'tabular' on contested or low-signal
+// fallbacks unless there is actual table evidence; otherwise fall back to NO_SIGNAL_INTENT ('rag').
+function fallbackFromClassifier(classified, searchQuery, hasTableMatch = false) {
   const baseIntent = classified
-    ? (classified.contested ? 'tabular' : classified.intent)
+    ? (classified.contested ? (hasTableMatch ? 'tabular' : NO_SIGNAL_INTENT) : classified.intent)
     : NO_SIGNAL_INTENT;
   const visual = resolveVisual(classified && { ...classified, intent: baseIntent });
   const intent = enforceIntentConstraints(baseIntent, visual.isVisualQuery);
@@ -548,7 +561,7 @@ async function routeQuery(question, selectedDepartments = [], conversationHistor
     console.warn(`[Router Fallback] ${err.message} in ${elapsed}ms.${slow}${scores}${tableLog}`);
 
     return buildResult(
-      fallbackFromClassifier(classified, trimmedQuestion),
+      fallbackFromClassifier(classified, trimmedQuestion, hasStrongTableEvidence(tableHints)),
       departments,
       departmentIds
     );
