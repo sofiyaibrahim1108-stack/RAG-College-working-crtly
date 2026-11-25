@@ -330,6 +330,31 @@ function parseIsoDateParts(isoStr) {
   return { year: Number(m[1]), month: Number(m[2]), day: Number(m[3]), iso };
 }
 
+function getCalendarWeekRange(today, weekOffset = 0) {
+  const parts = parseIsoDateParts(today);
+  if (!parts) return null;
+
+  const currentDate = new Date(
+    Date.UTC(parts.year, parts.month - 1, parts.day)
+  );
+
+  // Monday = start of the week
+  const daysFromMonday = (currentDate.getUTCDay() + 6) % 7;
+
+  const monday = new Date(currentDate);
+  monday.setUTCDate(
+    currentDate.getUTCDate() - daysFromMonday + (weekOffset * 7)
+  );
+
+  const sunday = new Date(monday);
+  sunday.setUTCDate(monday.getUTCDate() + 6);
+
+  return {
+    from: monday.toISOString().slice(0, 10),
+    to: sunday.toISOString().slice(0, 10)
+  };
+}
+
 function inferTextDateFormat(values) {
   const vals = (values || []).map((v) => String(v == null ? '' : v).trim()).filter(Boolean);
   if (vals.length === 0) return null;
@@ -476,7 +501,7 @@ function buildTableRoles(t) {
       titleColumn = c.name;
     }
   }
-    // Identify columns that contain reusable category-like values.
+  // Identify columns that contain reusable category-like values.
   const categoryColumns = [];
 
   for (const c of cols) {
@@ -552,27 +577,94 @@ function dateExpression(dc) {
 /*  Plan: validated, structured constraints for one standalone question       */
 /* -------------------------------------------------------------------------- */
 
-function emptyPlan(question) {
-  return {
-    question: String(question || '').trim(),
-    dateRanges: [],
-    dayOfMonth: null,
-    includeBlankRows: false,
-    showIds: false,
-    limit: null,
-    topic: null,
-    category: null,
-    mode: 'compute'
-  };
-}
-function sanitizePlanItem(raw, fallbackQuestion) {
+  function emptyPlan(question) {
+    return {
+      question: String(question || '').trim(),
+      dateRanges: [],
+      dayOfMonth: null,
+      includeBlankRows: false,
+      showIds: false,
+      limit: null,
+      topic: null,
+      category: null,
+      // department: null,
+      mode: 'compute'
+    };
+  }
+function sanitizePlanItem(raw, fallbackQuestion,today) {
   const plan = emptyPlan(fallbackQuestion);
   if (!raw || typeof raw !== 'object') return plan;
 
   const q = typeof raw.question === 'string' ? raw.question.trim().replace(/^["'`]+|["'`]+$/g, '') : '';
+
+
   if (q && q.length <= 500) plan.question = q;
 
-  const ranges = Array.isArray(raw.date_ranges) ? raw.date_ranges : [];
+  // Correct calendar week calculation using today's date
+// const questionText = String(fallbackQuestion || plan.question).toLowerCase();
+
+// if (today && /\bthis week\b/i.test(questionText)) {
+//   const todayParts = parseIsoDateParts(today);
+
+//   if (todayParts) {
+//     const currentDate = new Date(
+//       Date.UTC(todayParts.year, todayParts.month - 1, todayParts.day)
+//     );
+
+//     const dayOfWeek = currentDate.getUTCDay();
+//     const daysFromMonday = (dayOfWeek + 6) % 7;
+
+//     const monday = new Date(currentDate);
+//     monday.setUTCDate(currentDate.getUTCDate() - daysFromMonday);
+
+//     const sunday = new Date(monday);
+//     sunday.setUTCDate(monday.getUTCDate() + 6);
+
+//     const toIso = (date) =>
+//       date.toISOString().slice(0, 10);
+
+//     plan.dateRanges = [{
+//       from: toIso(monday),
+//       to: toIso(sunday)
+//     }];
+//   }
+// }
+// let calendarWeekResolved = false;
+//   // const ranges = Array.isArray(raw.date_ranges) ? raw.date_ranges : [];
+//   const ranges = calendarWeekResolved
+//   ? []
+//   : (Array.isArray(raw.date_ranges) ? raw.date_ranges : []);
+
+
+// Resolve this week, next week, previous week and last week
+const questionText = String(fallbackQuestion || plan.question).toLowerCase();
+
+const weekMatch = questionText.match(
+  /\b(this|next|previous|last)\s+week\b/i
+);
+
+let calendarWeekResolved = false;
+
+if (today && weekMatch) {
+  const weekType = weekMatch[1].toLowerCase();
+
+  const weekOffset =
+    weekType === 'next' ? 1 :
+    (weekType === 'previous' || weekType === 'last') ? -1 :
+    0;
+
+  const range = getCalendarWeekRange(today, weekOffset);
+
+  if (range) {
+    plan.dateRanges = [range];
+    calendarWeekResolved = true;
+  }
+}
+
+const ranges = calendarWeekResolved
+  ? []
+  : (Array.isArray(raw.date_ranges) ? raw.date_ranges : []);
+
   for (const r of ranges) {
     if (!r || typeof r !== 'object') continue;
     const a = parseIsoDateParts(r.from);
@@ -585,8 +677,69 @@ function sanitizePlanItem(raw, fallbackQuestion) {
     if (plan.dateRanges.length >= MAX_DATE_RANGES) break;
   }
 
+  // const day = Number(raw.day_of_month);
+  // if (Number.isInteger(day) && day >= 1 && day <= 31) plan.dayOfMonth = day;
+
+  // Recover a missing date range using the original question and today's date.
+if (plan.dateRanges.length === 0) {
+  const sourceQuestion = fallbackQuestion || plan.question;
+
+  const monthNames = [
+    'january', 'february', 'march', 'april',
+    'may', 'june', 'july', 'august',
+    'september', 'october', 'november', 'december'
+  ];
+
+  const monthMatch = sourceQuestion.match(
+    new RegExp(`\\b(${monthNames.join('|')})\\b`, 'i')
+  );
+
+  const dayMatch = sourceQuestion.match(
+    /\b(\d{1,2})(?:st|nd|rd|th)?\b/i
+  );
+
+  if (monthMatch && dayMatch && today) {
+    const month = monthNames.indexOf(monthMatch[1].toLowerCase()) + 1;
+    const day = Number(dayMatch[1]);
+    const todayParts = parseIsoDateParts(today);
+
+    if (todayParts && day >= 1 && day <= 31) {
+      let year = todayParts.year;
+      let resolvedDate = toIsoDateString(year, month, day);
+
+      if (resolvedDate && resolvedDate < todayParts.iso) {
+        year++;
+        resolvedDate = toIsoDateString(year, month, day);
+      }
+
+      if (
+        resolvedDate &&
+        year >= PLAN_MIN_YEAR &&
+        year <= PLAN_MAX_YEAR
+      ) {
+        plan.dateRanges = [{
+          from: resolvedDate,
+          to: resolvedDate
+        }];
+      }
+    }
+  }
+}
+
   const day = Number(raw.day_of_month);
-  if (Number.isInteger(day) && day >= 1 && day <= 31) plan.dayOfMonth = day;
+
+if (
+  plan.dateRanges.length === 1 &&
+  plan.dateRanges[0].from === plan.dateRanges[0].to
+) {
+  plan.dayOfMonth = Number(plan.dateRanges[0].from.slice(8, 10));
+} else if (
+  Number.isInteger(day) &&
+  day >= 1 &&
+  day <= 31
+) {
+  plan.dayOfMonth = day;
+}
 
   plan.includeBlankRows = raw.include_blank_rows === true;
   plan.showIds = raw.show_ids === true;
@@ -596,20 +749,20 @@ function sanitizePlanItem(raw, fallbackQuestion) {
 
   const category = typeof raw.category === 'string' ? raw.category.trim() : '';
 
-if (
-  category &&
-  category.length <= 200 &&
-  !/^(?:null|none|n\/a)$/i.test(category)
-) {
-  plan.category = category;
-}
+  if (
+    category &&
+    category.length <= 200 &&
+    !/^(?:null|none|n\/a)$/i.test(category)
+  ) {
+    plan.category = category;
+  }
 
   plan.mode = raw.mode === 'list' ? 'list' : 'compute';
 
   // Include blank-title rows for list queries without topic filtering
-if (plan.mode === 'list' && !plan.topic) {
-  plan.includeBlankRows = true;
-}
+  if (plan.mode === 'list' && !plan.topic) {
+    plan.includeBlankRows = true;
+  }
 
   const limit = Number(raw.limit);
   if (Number.isInteger(limit) && limit >= 1) plan.limit = Math.min(limit, MAX_RESULT_ROWS);
@@ -657,8 +810,7 @@ function describePlan(plan, systemAppliesDates = false) {
   }
   if (plan.dateRanges.length > 0) {
     lines.push(
-      `- The date column must fall inside ANY of these inclusive ranges${
-        systemAppliesDates ? ' (applied by the system)' : ' (cover every range, drop none)'
+      `- The date column must fall inside ANY of these inclusive ranges${systemAppliesDates ? ' (applied by the system)' : ' (cover every range, drop none)'
       }: ${plan.dateRanges.map((r) => `${r.from} to ${r.to}`).join('; ')}`
     );
   }
@@ -678,7 +830,7 @@ async function planQuestions(question, history, today, weekday, categoryHints = 
     .map((m) => `${m.role === 'assistant' ? 'Assistant' : 'User'}: ${String(m.content || '').slice(0, 300)}`)
     .join('\n');
 
-      const categoryContext = (Array.isArray(categoryHints) ? categoryHints : [])
+  const categoryContext = (Array.isArray(categoryHints) ? categoryHints : [])
     .map((table) => {
       const columns = (table.columns || [])
         .map((column) => {
@@ -771,9 +923,12 @@ JSON:`;
     if (parsed && Array.isArray(parsed.questions)) {
       const items = parsed.questions
         .slice(0, MAX_SUB_QUESTIONS)
-        .map((raw) => sanitizePlanItem(raw, question))
+       .map((raw) => sanitizePlanItem(raw, question, today))
         .filter((p) => p.question);
-      if (items.length > 0) return items;
+      if (items.length > 0) {
+  console.log('[DEBUG] Final sanitized plan:', JSON.stringify(items, null, 2));
+  return items;
+}
     }
 
     // Model ignored the JSON format: accept a single clean line as the rewritten question
@@ -1498,24 +1653,24 @@ function describeTableDetailed(t, semRows) {
   const fkText =
     fkEntries.length > 0
       ? `\nForeign keys: ${fkEntries
-          .map((fk) => `${escapeBacktickId(fk.column)} -> ${escapeBacktickId(fk.refTable)}.${escapeBacktickId(fk.refColumn)}`)
-          .join('; ')}`
+        .map((fk) => `${escapeBacktickId(fk.column)} -> ${escapeBacktickId(fk.refTable)}.${escapeBacktickId(fk.refColumn)}`)
+        .join('; ')}`
       : '';
 
   const dateEntries = Object.entries(t.textDateFormats || {});
   const dateText =
     dateEntries.length > 0
       ? `\nText columns that hold dates (NOT real DATE type; wrap with STR_TO_DATE before using MONTH/DAY/YEAR/DAYOFWEEK or comparisons): ${dateEntries
-          .map(([colName, fmt]) => `${escapeBacktickId(colName)} -> STR_TO_DATE(${escapeBacktickId(colName)}, '${fmt}')`)
-          .join('; ')}`
+        .map(([colName, fmt]) => `${escapeBacktickId(colName)} -> STR_TO_DATE(${escapeBacktickId(colName)}, '${fmt}')`)
+        .join('; ')}`
       : '';
 
   const catEntries = Object.entries(t.categoricalValues || {});
   const categoriesText =
     catEntries.length > 0
       ? `\nDistinct categorical values: ${catEntries
-          .map(([colName, vals]) => `${escapeBacktickId(colName)}=${JSON.stringify(vals)}`)
-          .join('; ')}`
+        .map(([colName, vals]) => `${escapeBacktickId(colName)}=${JSON.stringify(vals)}`)
+        .join('; ')}`
       : '';
 
   const rowCountText = t.rowCount > 0 ? `\nApproximate row count: ${t.rowCount}` : '';
@@ -1540,12 +1695,12 @@ function buildSchemaDescription(selectedTables, allTables, semanticHintsByTable)
     others.length === 0
       ? detailed
       : `${detailed}\n\nOther available tables (names and columns only):\n${others
-          .map((t) => {
-            const names = t.columns.slice(0, MAX_COMPACT_COLUMNS).map((c) => escapeBacktickId(c.name));
-            const more = t.columns.length > MAX_COMPACT_COLUMNS ? ', ...' : '';
-            return `Table ${escapeBacktickId(t.tableName)}: [${names.join(', ')}${more}]`;
-          })
-          .join('\n')}`;
+        .map((t) => {
+          const names = t.columns.slice(0, MAX_COMPACT_COLUMNS).map((c) => escapeBacktickId(c.name));
+          const more = t.columns.length > MAX_COMPACT_COLUMNS ? ', ...' : '';
+          return `Table ${escapeBacktickId(t.tableName)}: [${names.join(', ')}${more}]`;
+        })
+        .join('\n')}`;
 
   return `${base}\n\n${SCHEMA_QUERY_NOTES}`;
 }
@@ -1566,6 +1721,12 @@ QUERY LOGIC
    - Otherwise resolve relative words (today, this month, next week, upcoming, last week) using "Today's date". "this month" is the full calendar month. Bound BOTH ends of a window; never leave an open-ended filter that pulls in dates outside what the user asked.
    - Respect explicit month and year values; do not widen across other months or years.
    - A day of the month with no month named: match DAY(col) = N across all rows and ORDER BY the date column ascending.
+   - If the user question contains NO explicit or relative date/time reference,
+  NEVER add any date condition in WHERE.
+- Do not assume a default date range, current week, current month,
+  upcoming period, or any other date window.
+- Today's date is ONLY for resolving date references explicitly
+  mentioned by the user.
 6. Numbers stored as text: CAST(col AS DECIMAL(18,2)) before comparing, sorting, SUM or AVG.
 7. Text matching:
    - Free-text titles, descriptions, labels, categories: LOWER(col) LIKE '%term%'.
@@ -1629,7 +1790,7 @@ function dropBlankTitleRows(rows, tablesUsed, allTables) {
   if (titleKeys.size === 0) return rows;
 
   const kept = rows.filter((r) => Array.from(titleKeys).some((k) => !isBlank(r[k])));
- return kept;
+  return kept;
 }
 
 // Hide audit columns always, surrogate keys unless the user asked for ids.
@@ -1775,20 +1936,20 @@ function injectSystemConstraints(sql, allTables, plan) {
       const where = buildPlanWhere(dateExpr, plan);
       if (where) conds.push(`(${inlineDateParams(where.sql, where.params)})`);
     }
-   if (!plan.includeBlankRows && roles.titleColumn) {
-  const titleColumnPattern = new RegExp(
-    `(?:\\b\\w+\\s*\\.\\s*)?\`${roles.titleColumn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\`|(?:\\b\\w+\\s*\\.\\s*)?\\b${roles.titleColumn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`,
-    'i'
-  );
+    if (!plan.includeBlankRows && roles.titleColumn) {
+      const titleColumnPattern = new RegExp(
+        `(?:\\b\\w+\\s*\\.\\s*)?\`${roles.titleColumn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\`|(?:\\b\\w+\\s*\\.\\s*)?\\b${roles.titleColumn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`,
+        'i'
+      );
 
-  const hasBlankTitleCondition =
-    titleColumnPattern.test(flat) &&
-    /\bIS\s+NULL\b|=\s*''|=\s*""|TRIM\s*\([^)]*\)\s*=\s*''/i.test(flat);
+      const hasBlankTitleCondition =
+        titleColumnPattern.test(flat) &&
+        /\bIS\s+NULL\b|=\s*''|=\s*""|TRIM\s*\([^)]*\)\s*=\s*''/i.test(flat);
 
-  if (!hasBlankTitleCondition) {
-    conds.push(`TRIM(COALESCE(${qual}${escapeBacktickId(roles.titleColumn)}, '')) <> ''`);
-  }
-}
+      if (!hasBlankTitleCondition) {
+        conds.push(`TRIM(COALESCE(${qual}${escapeBacktickId(roles.titleColumn)}, '')) <> ''`);
+      }
+    }
 
     let out = String(sql);
     if (conds.length > 0) {
@@ -1853,11 +2014,11 @@ async function fetchEvidencePool(allTables, tablesUsed, plan, allowEmpty = false
       }
     }
 
-   if (plan.includeBlankRows === false && roles.titleColumn) {
-  conds.push(
-    `TRIM(COALESCE(${escapeBacktickId(roles.titleColumn)}, '')) <> ''`
-  );
-}
+    if (plan.includeBlankRows === false && roles.titleColumn) {
+      conds.push(
+        `TRIM(COALESCE(${escapeBacktickId(roles.titleColumn)}, '')) <> ''`
+      );
+    }
 
     const visibleColumns = getVisibleColumnNames(t, plan.showIds);
     const cols = visibleColumns.map(escapeBacktickId);
@@ -1895,8 +2056,7 @@ async function fetchEvidencePool(allTables, tablesUsed, plan, allowEmpty = false
     try {
       while (true) {
         const batch = await querySql(
-          `SELECT ${cols.join(', ')} FROM ${escapeBacktickId(t.tableName)}${
-            conds.length > 0 ? ` WHERE ${conds.join(' AND ')}` : ''
+          `SELECT ${cols.join(', ')} FROM ${escapeBacktickId(t.tableName)}${conds.length > 0 ? ` WHERE ${conds.join(' AND ')}` : ''
           }${orderBy} LIMIT ${POOL_MAX_ROWS} OFFSET ${offset}`,
           params,
           SQL_QUERY_TIMEOUT_MS
@@ -2076,6 +2236,14 @@ function findCategoryFilter(plan, table) {
 // Returns null when the classification is unusable (caller then falls back to the normal answer step).
 async function selectRowsByTopic(plan, candidates) {
   const rows = (candidates || []).slice(0, TOPIC_MAX_CANDIDATES);
+
+  console.log('[DEBUG] Topic:', plan.topic);
+  console.log('[DEBUG] Total candidates:', candidates?.length);
+  console.log('[DEBUG] Candidates sent to LLM:', rows.length);
+
+  if (rows.length === 0) return null;
+
+  // Remaining existing code...
   if (rows.length === 0) return null;
 
   const prompt = `Question: ${plan.question}
@@ -2105,7 +2273,7 @@ Return ONLY JSON in this form: {"matches":[row numbers]}`;
     const idx = Array.from(
       new Set(parsed.matches.map(Number).filter((n) => Number.isInteger(n) && n >= 0 && n < rows.length))
     ).sort((a, b) => a - b);
-       if (parsed.matches.length > 0 && idx.length === 0) return null;
+    if (parsed.matches.length > 0 && idx.length === 0) return null;
 
     // Also include rows containing every meaningful topic keyword exactly.
     const topicTokens = tokenizeMeaningful(plan.topic);
@@ -2152,14 +2320,13 @@ async function synthesizeFromEvidence({ question, today, plan, sqlRows, semantic
   const sqlBlock = hasSql ? `SQL Query Results (JSON):\n${formatRowsForPrompt(sqlRows)}\n\n` : '';
   const semBlock = hasSem
     ? `Additional Semantically Matched Live Rows (verified against the database):\n${semanticRows
-        .map((r, i) => `[${i + 1}] (score ${Number(r.score).toFixed(2)}) ${r.content}`)
-        .join('\n')}\n\n`
+      .map((r, i) => `[${i + 1}] (score ${Number(r.score).toFixed(2)}) ${r.content}`)
+      .join('\n')}\n\n`
     : '';
   const constraintText = describePlanForAnswer(plan);
   const poolBlock = hasPool
-    ? `Candidate rows from the database${constraintText ? ` (already limited to ${constraintText})` : ' (whole table)'}${
-        pool.truncated ? ', list truncated' : ', complete list'
-      }:\n${JSON.stringify(normalizeRowsForOutput(poolRows))}\n\n`
+    ? `Candidate rows from the database${constraintText ? ` (already limited to ${constraintText})` : ' (whole table)'}${pool.truncated ? ', list truncated' : ', complete list'
+    }:\n${JSON.stringify(normalizeRowsForOutput(poolRows))}\n\n`
     : '';
 
   const prompt = `Today's date: ${today}
@@ -2173,12 +2340,10 @@ ${sqlBlock}${semBlock}${poolBlock}Rules:
 - Apply any time reference in the question relative to Today's date and exclude rows outside it. When the question uses a relative time, state the date range you applied.
 - If the SQL results are an aggregate (count, sum, average, min, max), trust them and do not recount from the other rows.
 - When the question asks "when", give the exact stored dates.
-- Recognize standard abbreviations, acronyms and natural synonyms, and state the exact stored values.${
-    plan.showIds ? '' : '\n- Never show internal ids or audit columns.'
-  }
-- Never invent records, dates, counts or facts that are not in the evidence.${
-    hasSql ? '' : '\n- If none of the rows genuinely answer the question, reply with exactly: NO_MATCH'
-  }`;
+- Recognize standard abbreviations, acronyms and natural synonyms, and state the exact stored values.${plan.showIds ? '' : '\n- Never show internal ids or audit columns.'
+    }
+- Never invent records, dates, counts or facts that are not in the evidence.${hasSql ? '' : '\n- If none of the rows genuinely answer the question, reply with exactly: NO_MATCH'
+    }`;
 
   try {
     const answer = await withTimeout(
@@ -2302,56 +2467,56 @@ async function runDirectList(plan, table, allTables, allowedTableNames) {
 
   let rows = pool.rows;
   let label = '';
-   if (
-  plan.mode === 'list' &&
-  (plan.topic || plan.category) &&
-  rows.length > 0
-) {
+  if (
+    plan.mode === 'list' &&
+    (plan.topic || plan.category) &&
+    rows.length > 0
+  ) {
     const categoryFilter = findCategoryFilter(plan, table);
 
     console.log('[DEBUG] Plan topic:', plan.topic);
-console.log('[DEBUG] Category filter:', categoryFilter);
-console.log('[DEBUG] Table category columns:', getRoles(table)?.categoryColumns);
-console.log('[DEBUG] First 5 rows:', rows.slice(0, 5));
+    console.log('[DEBUG] Category filter:', categoryFilter);
+    console.log('[DEBUG] Table category columns:', getRoles(table)?.categoryColumns);
+    console.log('[DEBUG] First 5 rows:', rows.slice(0, 5));
 
     if (categoryFilter) {
-  const targetValues = new Set(
-    categoryFilter.values.map((value) =>
-      String(value).trim().toLowerCase()
-    )
-  );
+      const targetValues = new Set(
+        categoryFilter.values.map((value) =>
+          String(value).trim().toLowerCase()
+        )
+      );
 
-  rows = rows.filter((row) => {
-    const actualValue = String(
-      row[categoryFilter.column] ?? ''
-    ).trim().toLowerCase();
+      rows = rows.filter((row) => {
+        const actualValue = String(
+          row[categoryFilter.column] ?? ''
+        ).trim().toLowerCase();
 
-    return targetValues.has(actualValue);
-  });
+        return targetValues.has(actualValue);
+      });
 
-  console.log('[Category + Semantic] Topic:', categoryFilter.semanticTopic);
-  console.log('[Category + Semantic] Candidate count:', rows.length);
-  console.log('[Category + Semantic] Candidates:', rows.map((row) => rowToLine(row)));
+      console.log('[Category + Semantic] Topic:', categoryFilter.semanticTopic);
+      console.log('[Category + Semantic] Candidate count:', rows.length);
+      console.log('[Category + Semantic] Candidates:', rows.map((row) => rowToLine(row)));
 
-  if (plan.topic) {
-    const semanticPicked = await selectRowsByTopic(plan, rows);
+      if (plan.topic) {
+        const semanticPicked = await selectRowsByTopic(plan, rows);
 
-    if (!semanticPicked) return null;
-    rows = semanticPicked;
-  }
+        if (!semanticPicked) return null;
+        rows = semanticPicked;
+      }
 
-  console.log('[Category + Semantic] Final rows:', rows.map((row) => rowToLine(row)));
+      console.log('[Category + Semantic] Final rows:', rows.map((row) => rowToLine(row)));
 
-} else if (plan.category) {
-  // Requested category was not found in this table.
-  return null;
+    } else if (plan.category) {
+      // Requested category was not found in this table.
+      return null;
 
-} else if (plan.topic) {
-  const picked = await selectRowsByTopic(plan, rows);
+    } else if (plan.topic) {
+      const picked = await selectRowsByTopic(plan, rows);
 
-  if (!picked) return null;
-  rows = picked;
-  
+      if (!picked) return null;
+      rows = picked;
+
     } else {
       const picked = await selectRowsByTopic(plan, rows);
       if (!picked) return null;
@@ -2411,7 +2576,8 @@ async function runSingleQuestion(plan, allTables, today) {
           prompt: `${baseUserPrompt}${retryNote}\n\nSQL:`,
           system: SQL_SYSTEM_PROMPT,
           temperature: SQL_GEN_TEMPERATURE,
-          maxTokens: SQL_GEN_MAX_TOKENS
+          maxTokens: SQL_GEN_MAX_TOKENS,
+          model: process.env.SQL_LLM_MODEL || LLM_MODEL
         }),
         SQL_LLM_TIMEOUT_MS,
         'SQL generation'
@@ -2486,25 +2652,69 @@ async function runSingleQuestion(plan, allTables, today) {
 
   // Code-side guarantees: verify rows against the validated plan, drop blank-title rows,
   // hide ids/audit columns, and fetch the candidate pool for recall by meaning.
-  const evidenceTables = usedTableNames.length > 0 ? usedTableNames : selectedTables.map((t) => t.tableName);
-  let sqlRows = applyPlanToRows(rowList || [], evidenceTables, allTables, plan);
+const semanticTableNames = [
+  ...new Set(
+    (semanticCtx.hydratedRows || [])
+      .filter(
+        (row) =>
+          row &&
+          row.targetTable &&
+          row.score >= SEMANTIC_ROW_FALLBACK_MIN_SCORE
+      )
+      .map((row) => row.targetTable)
+      .filter((tableName) =>
+        selectedTables.some(
+          (table) => table.tableName === tableName
+        )
+      )
+  )
+];
+
+const evidenceTables = usedTableNames.length > 0
+  ? usedTableNames
+  : semanticTableNames;
+    let sqlRows = applyPlanToRows(rowList || [], evidenceTables, allTables, plan);
   if (!plan.includeBlankRows) sqlRows = dropBlankTitleRows(sqlRows, evidenceTables, allTables);
   sqlRows = hideInternalColumns(sqlRows, evidenceTables, allTables, plan);
   if (plan.limit) sqlRows = sqlRows.slice(0, plan.limit);
 
   const pool = plan.limit ? null : await fetchEvidencePool(allTables, evidenceTables, plan);
 
+  let semanticRows = [];
+
+if (SEMANTIC_ALWAYS_MERGE || sqlRows.length === 0) {
+  semanticRows = await collectVerifiedSemanticRows(
+    plan,
+    semanticCtx.hydratedRows,
+    allTables
+  );
+}
+
+console.log('[DEBUG] Semantic verified rows:', semanticRows.length);
+
+  console.log('[DEBUG] Plan:', {
+  mode: plan.mode,
+  topic: plan.topic,
+  category: plan.category,
+  dateRanges: plan.dateRanges,
+  includeBlankRows: plan.includeBlankRows
+});
+
   // Topic questions (e.g. one kind of record across several months): classify the candidate rows by meaning
   // and answer from the picked rows only. Candidates = every row of the period (pool) or the SQL rows.
   if (plan.mode === 'list' && (plan.topic || plan.category) && !plan.limit) {
-    const candidates = pool ? pool.rows : sqlRows;
+   const candidates = pool?.rows?.length
+  ? pool.rows
+  : sqlRows.length > 0
+    ? sqlRows
+    : semanticRows;
 
     const categoryFilter =
       evidenceTables.length === 1
         ? findCategoryFilter(
-            plan,
-            allTables.find((t) => t.tableName === evidenceTables[0])
-          )
+          plan,
+          allTables.find((t) => t.tableName === evidenceTables[0])
+        )
         : null;
 
     let picked = null;
@@ -2516,7 +2726,7 @@ async function runSingleQuestion(plan, allTables, today) {
         )
       );
 
-           picked = candidates.filter((row) => {
+      picked = candidates.filter((row) => {
         const actualValue = String(
           row[categoryFilter.column] ?? ''
         ).trim().toLowerCase();
@@ -2524,11 +2734,11 @@ async function runSingleQuestion(plan, allTables, today) {
         return targetValues.has(actualValue);
       });
 
-     if (plan.topic && picked.length > 0) {
-  picked = await selectRowsByTopic(plan, picked);
+      if (plan.topic && picked.length > 0) {
+        picked = await selectRowsByTopic(plan, picked);
 
-  if (!picked) return null;
-}
+        if (!picked) return null;
+      }
     } else {
       picked = await selectRowsByTopic(plan, candidates);
     }
@@ -2542,22 +2752,23 @@ async function runSingleQuestion(plan, allTables, today) {
         tables: evidenceTables,
         allowedTableNames,
         label: [plan.category, plan.topic]
-  .filter(Boolean)
-  .map((value) => `"${value}"`)
-  .join(' '),
+          .filter(Boolean)
+          .map((value) => `"${value}"`)
+          .join(' '),
       });
     }
   }
 
   // The SQL step failed or timed out but the rows of the period were fetched by code: answer from them directly
-  if (rowList === null && pool && pool.rows.length > 0) {
-    return buildListResult({ plan, rows: pool.rows, pool, sql, tables: evidenceTables, allowedTableNames });
-  }
+  // if (rowList === null && pool && pool.rows.length > 0) {
+  //   return buildListResult({ plan, rows: pool.rows, pool, sql, tables: evidenceTables, allowedTableNames });
+  // }
+  
 
-  let semanticRows = [];
-  if (SEMANTIC_ALWAYS_MERGE || sqlRows.length === 0) {
-    semanticRows = await collectVerifiedSemanticRows(plan, semanticCtx.hydratedRows, allTables);
-  }
+  // let semanticRows = [];
+  // if (SEMANTIC_ALWAYS_MERGE || sqlRows.length === 0) {
+  //   semanticRows = await collectVerifiedSemanticRows(plan, semanticCtx.hydratedRows, allTables);
+  // }
 
   if (rowList === null && semanticRows.length === 0 && !pool) {
     return {
@@ -2581,30 +2792,30 @@ async function runSingleQuestion(plan, allTables, today) {
   }
 
   const hasGroupedCount =
-  /\bGROUP\s+BY\b/i.test(sql) &&
-  /\bCOUNT\s*\(/i.test(sql);
+    /\bGROUP\s+BY\b/i.test(sql) &&
+    /\bCOUNT\s*\(/i.test(sql);
 
   const tooManyForLlm =
     sqlRows.length > 0 && !(LLM_SYNTHESIS_MAX_ROWS > 0 && sqlRows.length <= LLM_SYNTHESIS_MAX_ROWS);
 
   let finalAnswer = null;
   if (hasGroupedCount && sqlRows.length > 0) {
-  finalAnswer = formatRowsDeterministically(sqlRows, '', true);
-}
-  if (!finalAnswer) {
-  if (tooManyForLlm) {
-    finalAnswer = formatRowsDeterministically(sqlRows, '', hasGroupedCount);
-  } else {
-    finalAnswer = await synthesizeFromEvidence({
-      question: cleanQuestion,
-      today,
-      plan,
-      sqlRows,
-      semanticRows,
-      pool
-    });
+    finalAnswer = formatRowsDeterministically(sqlRows, '', true);
   }
-}
+  if (!finalAnswer) {
+    if (tooManyForLlm) {
+      finalAnswer = formatRowsDeterministically(sqlRows, '', hasGroupedCount);
+    } else {
+      finalAnswer = await synthesizeFromEvidence({
+        question: cleanQuestion,
+        today,
+        plan,
+        sqlRows,
+        semanticRows,
+        pool
+      });
+    }
+  }
 
   let usedSemantic = semanticRows.length > 0 && !tooManyForLlm;
   if (!finalAnswer) {
@@ -2622,11 +2833,10 @@ async function runSingleQuestion(plan, allTables, today) {
     status: 'ok',
     sql,
     rowCount: sqlRows.length || (pool ? pool.rows.length : 0) || semanticRows.length,
-    answer: `${String(finalAnswer || '').trim() || formatRowsDeterministically(sqlRows)}${
-      rowList && rowList.length >= MAX_RESULT_ROWS
+    answer: `${String(finalAnswer || '').trim() || formatRowsDeterministically(sqlRows)}${rowList && rowList.length >= MAX_RESULT_ROWS
         ? `\n\n(Row limit of ${MAX_RESULT_ROWS} reached; there may be more matching records.)`
         : ''
-    }`,
+      }`,
     sources: buildSources({
       sqlTables: sqlRows.length > 0 || pool ? evidenceTables : [],
       semanticRows: usedSemantic ? semanticRows : [],
@@ -2666,44 +2876,44 @@ async function executeSqlQuery(question, _scope = null, options = {}) {
 
     const allTables = await getMySqlSchema();
 
-if (!allTables || allTables.length === 0) {
-  return {
-    status: 'no_data',
-    answer: 'No tables are available in the database.',
-    sources: [],
-    connected: safeIsSqlConnected()
-  };
-}
+    if (!allTables || allTables.length === 0) {
+      return {
+        status: 'no_data',
+        answer: 'No tables are available in the database.',
+        sources: [],
+        connected: safeIsSqlConnected()
+      };
+    }
 
-const categoryHints = allTables.map((table) => ({
-  tableName: table.tableName,
-  columns: (getRoles(table)?.categoryColumns || []).map((column) => ({
-    name: column.name,
-    values: column.values
-  }))
-})).filter((table) => table.columns.length > 0);
+    const categoryHints = allTables.map((table) => ({
+      tableName: table.tableName,
+      columns: (getRoles(table)?.categoryColumns || []).map((column) => ({
+        name: column.name,
+        values: column.values
+      }))
+    })).filter((table) => table.columns.length > 0);
 
-console.log(
-  '[DEBUG] Category hints:',
-  JSON.stringify(categoryHints).length,
-  'characters'
-);
+    console.log(
+      '[DEBUG] Category hints:',
+      JSON.stringify(categoryHints).length,
+      'characters'
+    );
 
-const plans = await planQuestions(
-  originalQuestion,
-  options && options.history,
-  today,
-  weekday,
-  categoryHints
-);
+    const plans = await planQuestions(
+      originalQuestion,
+      options && options.history,
+      today,
+      weekday,
+      categoryHints
+    );
 
-if (plans.length !== 1 || plans[0].question !== originalQuestion) {
-  console.log('[SqlQueryTool] Plan:', JSON.stringify(plans));
-}
+    if (plans.length !== 1 || plans[0].question !== originalQuestion) {
+      console.log('[SqlQueryTool] Plan:', JSON.stringify(plans));
+    }
 
-if (plans.some((p) => isReadOnlyMutationRequest(p.question))) {
-  return { status: 'ok', sql: '', rowCount: 0, answer: READ_ONLY_MESSAGE, sources: [] };
-}if (!allTables || allTables.length === 0) {
+    if (plans.some((p) => isReadOnlyMutationRequest(p.question))) {
+      return { status: 'ok', sql: '', rowCount: 0, answer: READ_ONLY_MESSAGE, sources: [] };
+    } if (!allTables || allTables.length === 0) {
       return {
         status: 'no_data',
         answer: 'No tables are available in the database.',

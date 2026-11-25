@@ -50,9 +50,28 @@ function buildPayload({ prompt, system, temperature, format, maxTokens, stream }
 /**
  * Universal LLM generation service calling Ollama (waits for the full answer)
  */
-async function generateText({ prompt, system = '', temperature = 0.2, format = null, maxTokens = 1024 }) {
+async function generateText({
+  prompt,
+  system = '',
+  temperature = 0.2,
+  format = null,
+  maxTokens = 1024,
+  model = LLM_MODEL
+}) {
   const url = `${OLLAMA_BASE_URL}/api/generate`;
-  const payload = buildPayload({ prompt, system, temperature, format, maxTokens, stream: false });
+
+  const payload = buildPayload({
+    prompt,
+    system,
+    temperature,
+    format,
+    maxTokens,
+    stream: false
+  });
+
+  console.log("[SQLLLM MODEL USED]", model);
+
+  payload.model = model;
 
   const response = await fetch(url, {
     method: 'POST',
@@ -67,9 +86,7 @@ async function generateText({ prompt, system = '', temperature = 0.2, format = n
 
   const data = await response.json();
   return data.response ? data.response.trim() : '';
-}
-
-/**
+}/**
  * Streaming version: calls onToken(piece) for every piece of text as Ollama
  * produces it, and still resolves with the complete text at the end.
  */
